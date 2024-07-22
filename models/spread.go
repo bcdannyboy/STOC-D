@@ -4,18 +4,6 @@ import (
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
-type OptionSpread struct {
-	ShortLeg       SpreadLeg
-	LongLeg        SpreadLeg
-	SpreadType     string
-	SpreadCredit   float64
-	SpreadBSMPrice float64
-	ExtrinsicValue float64
-	IntrinsicValue float64
-	Greeks         BSMResult
-	ImpliedVol     SpreadImpliedVol
-}
-
 type SpreadLeg struct {
 	Option            tradier.Option
 	BSMResult         BSMResult
@@ -26,6 +14,18 @@ type SpreadLeg struct {
 	MidImpliedVol     float64
 	ExtrinsicValue    float64
 	IntrinsicValue    float64
+}
+
+type OptionSpread struct {
+	ShortLeg       SpreadLeg
+	LongLeg        SpreadLeg
+	SpreadType     string
+	SpreadCredit   float64
+	SpreadBSMPrice float64
+	ExtrinsicValue float64
+	IntrinsicValue float64
+	Greeks         BSMResult
+	ImpliedVol     SpreadImpliedVol
 }
 
 type BSMResult struct {

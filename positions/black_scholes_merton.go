@@ -2,67 +2,76 @@ package positions
 
 import (
 	"math"
-	"math/rand"
 	"time"
 
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
-// CalculateOptionMetrics calculates BSM price, Greeks, and implied volatility for a single option
-func CalculateOptionMetrics(option *tradier.Option, underlyingPrice, riskFreeRate float64) BSMResult {
-	S := underlyingPrice
-	X := option.Strike
-	T := calculateTimeToMaturity(option.ExpirationDate)
-	r := riskFreeRate
+const (
+	maxIterations = 100
+	epsilon       = 1e-8
+)
 
-	targetPrice := (option.Bid + option.Ask) / 2 // Use mid-price as target
+func CalculateOptionMetrics(option *tradier.Option, underlyingPrice, riskFreeRate float64) BSMResult {
+	T := calculateTimeToMaturity(option.ExpirationDate)
 	isCall := option.OptionType == "call"
 
-	// Calculate implied volatility
-	impliedVol := calculateImpliedVolatility(targetPrice, S, X, T, r, isCall)
+	// Use mid price as target
+	targetPrice := (option.Bid + option.Ask) / 2
 
-	// Calculate BSM metrics using the calculated implied volatility
-	result := calculateBSM(S, X, T, r, impliedVol, isCall)
+	// Calculate implied volatility
+	impliedVol := calculateImpliedVolatility(targetPrice, underlyingPrice, option.Strike, T, riskFreeRate, isCall)
+
+	// Calculate BSM metrics
+	result := calculateBSM(underlyingPrice, option.Strike, T, riskFreeRate, impliedVol, isCall)
 	result.ImpliedVolatility = impliedVol
 
-	// Calculate Shadow Gamma (assuming 1% price change and 5% volatility change)
-	result.ShadowUpGamma, result.ShadowDownGamma = ShadowGamma(*option, S, r, impliedVol, 0.01, 0.05)
-
-	// Calculate Skew Gamma (assuming 0.1% volatility step)
-	result.SkewGamma = SkewGamma(*option, S, r, impliedVol, 0.001)
+	// Calculate additional Greeks
+	result.ShadowUpGamma, result.ShadowDownGamma = calculateShadowGamma(option, underlyingPrice, riskFreeRate, impliedVol)
+	result.SkewGamma = calculateSkewGamma(option, underlyingPrice, riskFreeRate, impliedVol)
 
 	return result
 }
 
-func calculateBSM(S, X, T, r, sigma float64, isCall bool) BSMResult {
-	sqrtT := math.Sqrt(T)
-	d1 := (math.Log(S/X) + (r+0.5*sigma*sigma)*T) / (sigma * sqrtT)
-	d2 := d1 - sigma*sqrtT
+func calculateImpliedVolatility(targetPrice, S, K, T, r float64, isCall bool) float64 {
+	sigma := 0.5 // Initial guess
+	for i := 0; i < maxIterations; i++ {
+		price := calculateOptionPrice(S, K, T, r, sigma, isCall)
+		vega := calculateBSMVega(S, K, T, r, sigma)
 
-	callPrice := S*normCDF(d1) - X*math.Exp(-r*T)*normCDF(d2)
-	putPrice := X*math.Exp(-r*T)*normCDF(-d2) - S*normCDF(-d1)
+		diff := price - targetPrice
+		if math.Abs(diff) < epsilon {
+			return sigma
+		}
 
-	price := callPrice
-	if !isCall {
-		price = putPrice
+		sigma = sigma - diff/vega
+		if sigma <= 0 {
+			sigma = 0.0001 // Avoid negative volatility
+		}
+	}
+	return math.NaN() // Failed to converge
+}
+
+func calculateBSM(S, K, T, r, sigma float64, isCall bool) BSMResult {
+	d1 := (math.Log(S/K) + (r+0.5*sigma*sigma)*T) / (sigma * math.Sqrt(T))
+	d2 := d1 - sigma*math.Sqrt(T)
+
+	var delta, price float64
+	if isCall {
+		delta = normCDF(d1)
+		price = S*normCDF(d1) - K*math.Exp(-r*T)*normCDF(d2)
+	} else {
+		delta = normCDF(d1) - 1
+		price = K*math.Exp(-r*T)*normCDF(-d2) - S*normCDF(-d1)
 	}
 
-	delta := normCDF(d1)
+	gamma := normPDF(d1) / (S * sigma * math.Sqrt(T))
+	vega := S * normPDF(d1) * math.Sqrt(T)
+	theta := -(S*normPDF(d1)*sigma)/(2*math.Sqrt(T)) - r*K*math.Exp(-r*T)*normCDF(d2)
+	rho := K * T * math.Exp(-r*T) * normCDF(d2)
 	if !isCall {
-		delta = delta - 1
-	}
-
-	gamma := normPDF(d1) / (S * sigma * sqrtT)
-	vega := S * normPDF(d1) * sqrtT
-
-	theta := -(S*normPDF(d1)*sigma)/(2*sqrtT) - r*X*math.Exp(-r*T)*normCDF(d2)
-	if !isCall {
-		theta = theta + r*X*math.Exp(-r*T)
-	}
-
-	rho := X * T * math.Exp(-r*T) * normCDF(d2)
-	if !isCall {
-		rho = -X * T * math.Exp(-r*T) * normCDF(-d2)
+		theta = theta + r*K*math.Exp(-r*T)
+		rho = -K * T * math.Exp(-r*T) * normCDF(-d2)
 	}
 
 	return BSMResult{
@@ -75,25 +84,56 @@ func calculateBSM(S, X, T, r, sigma float64, isCall bool) BSMResult {
 	}
 }
 
-func calculateImpliedVolatility(targetPrice, S, X, T, r float64, isCall bool) float64 {
-	const epsilon = 1e-5
-	const maxIterations = 100
+func calculateOptionPrice(S, K, T, r, sigma float64, isCall bool) float64 {
+	d1 := (math.Log(S/K) + (r+0.5*sigma*sigma)*T) / (sigma * math.Sqrt(T))
+	d2 := d1 - sigma*math.Sqrt(T)
 
-	sigma := 0.5 // Initial guess
-	for i := 0; i < maxIterations; i++ {
-		result := calculateBSM(S, X, T, r, sigma, isCall)
-		price := result.Price
-		vega := result.Vega
-
-		diff := price - targetPrice
-		if math.Abs(diff) < epsilon {
-			return sigma
-		}
-
-		sigma = sigma - diff/vega
+	if isCall {
+		return S*normCDF(d1) - K*math.Exp(-r*T)*normCDF(d2)
 	}
+	return K*math.Exp(-r*T)*normCDF(-d2) - S*normCDF(-d1)
+}
 
-	return math.NaN() // Failed to converge
+func calculateBSMVega(S, K, T, r, sigma float64) float64 {
+	d1 := (math.Log(S/K) + (r+0.5*sigma*sigma)*T) / (sigma * math.Sqrt(T))
+	return S * normPDF(d1) * math.Sqrt(T)
+}
+
+func calculateShadowGamma(option *tradier.Option, S, r, sigma float64) (float64, float64) {
+	T := calculateTimeToMaturity(option.ExpirationDate)
+	isCall := option.OptionType == "call"
+
+	// Calculate up and down scenarios
+	upS := S * 1.01
+	downS := S * 0.99
+	upSigma := sigma * 1.05
+	downSigma := sigma * 0.95
+
+	// Calculate deltas for each scenario
+	baseDelta := calculateBSM(S, option.Strike, T, r, sigma, isCall).Delta
+	upDelta := calculateBSM(upS, option.Strike, T, r, upSigma, isCall).Delta
+	downDelta := calculateBSM(downS, option.Strike, T, r, downSigma, isCall).Delta
+
+	// Calculate Shadow Gammas
+	shadowUpGamma := (upDelta - baseDelta) / (upS - S)
+	shadowDownGamma := (baseDelta - downDelta) / (S - downS)
+
+	return shadowUpGamma, shadowDownGamma
+}
+
+func calculateSkewGamma(option *tradier.Option, S, r, sigma float64) float64 {
+	T := calculateTimeToMaturity(option.ExpirationDate)
+	isCall := option.OptionType == "call"
+
+	// Calculate vega for slightly different volatilities
+	upSigma := sigma * 1.001
+	downSigma := sigma * 0.999
+
+	upVega := calculateBSM(S, option.Strike, T, r, upSigma, isCall).Vega
+	downVega := calculateBSM(S, option.Strike, T, r, downSigma, isCall).Vega
+
+	// Calculate Skew Gamma (Vomma)
+	return (upVega - downVega) / (upSigma - downSigma)
 }
 
 func calculateTimeToMaturity(expirationDate string) float64 {
@@ -108,19 +148,4 @@ func normCDF(x float64) float64 {
 
 func normPDF(x float64) float64 {
 	return math.Exp(-0.5*x*x) / math.Sqrt(2*math.Pi)
-}
-
-// SimulateGBM simulates a Geometric Brownian Motion path
-func SimulateGBM(S0, mu, sigma float64, T float64, steps int) []float64 {
-	dt := T / float64(steps)
-	prices := make([]float64, steps+1)
-	prices[0] = S0
-
-	for i := 1; i <= steps; i++ {
-		dW := math.Sqrt(dt) * rand.NormFloat64()
-		dS := mu*prices[i-1]*dt + sigma*prices[i-1]*dW
-		prices[i] = prices[i-1] + dS
-	}
-
-	return prices
 }

@@ -19,8 +19,8 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
 	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
 
-	extrinsicValue := math.Max(spreadCredit-(shortLeg.Option.Strike-longLeg.Option.Strike), 0)
-	intrinsicValue := math.Max((shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit, 0)
+	extrinsicValue := math.Max(0, spreadCredit-math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike))
+	intrinsicValue := math.Max(0, math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit)
 
 	spreadGreeks := calculateSpreadGreeks(shortLeg, longLeg)
 	spreadIV := calculateSpreadIV(shortLeg, longLeg)
@@ -51,20 +51,27 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 		}
 	}
 
-	extrinsicValue := math.Max(option.Bid-math.Max(underlyingPrice-option.Strike, 0), 0)
-	intrinsicValue := math.Max(underlyingPrice-option.Strike, 0)
+	intrinsicValue := calculateIntrinsicValue(option, underlyingPrice)
+	extrinsicValue := math.Max(0, (option.Bid+option.Ask)/2-intrinsicValue)
 
 	return models.SpreadLeg{
 		Option:            option,
 		BSMResult:         sanitizeBSMResult(bsmResult),
 		GARCHResult:       sanitizeGARCHResult(garchResult),
 		GarmanKlassResult: garmanKlassResult,
-		BidImpliedVol:     option.Greeks.BidIv,
-		AskImpliedVol:     option.Greeks.AskIv,
-		MidImpliedVol:     option.Greeks.MidIv,
+		BidImpliedVol:     math.Max(0, option.Greeks.BidIv),
+		AskImpliedVol:     math.Max(0, option.Greeks.AskIv),
+		MidImpliedVol:     math.Max(0, option.Greeks.MidIv),
 		ExtrinsicValue:    extrinsicValue,
 		IntrinsicValue:    intrinsicValue,
 	}
+}
+
+func calculateIntrinsicValue(option tradier.Option, underlyingPrice float64) float64 {
+	if option.OptionType == "call" {
+		return math.Max(0, underlyingPrice-option.Strike)
+	}
+	return math.Max(0, option.Strike-underlyingPrice)
 }
 
 func sanitizeBSMResult(result BSMResult) models.BSMResult {
@@ -128,20 +135,11 @@ func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg) models.SpreadImpliedV
 }
 
 func calculateReturnOnRisk(spread models.OptionSpread) float64 {
-	if spread.SpreadType == "Bull Put" {
-		maxRisk := spread.ShortLeg.Option.Strike - spread.LongLeg.Option.Strike - spread.SpreadCredit
-		if maxRisk <= 0 {
-			return 0 // Avoid division by zero or negative risk
-		}
-		return spread.SpreadCredit / maxRisk
-	} else if spread.SpreadType == "Bear Call" {
-		maxRisk := spread.ShortLeg.Option.Strike - spread.LongLeg.Option.Strike - spread.SpreadCredit
-		if maxRisk <= 0 {
-			return 0 // Avoid division by zero or negative risk
-		}
-		return spread.SpreadCredit / maxRisk
+	maxRisk := math.Abs(spread.ShortLeg.Option.Strike-spread.LongLeg.Option.Strike) - spread.SpreadCredit
+	if maxRisk <= 0 {
+		return 0 // Avoid division by zero or negative risk
 	}
-	return 0 // Default case
+	return spread.SpreadCredit / maxRisk
 }
 
 func filterPutOptions(options []tradier.Option) []tradier.Option {
@@ -239,10 +237,10 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 					returnOnRisk := calculateReturnOnRisk(spread)
 					fmt.Printf("%s Spread: %+v, Return on Risk: %.4f\n", spreadType, spread, returnOnRisk)
 					if returnOnRisk >= minReturnOnRisk {
-						probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0].Probabilities
+						probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
 						spreadWithProb := models.SpreadWithProbabilities{
 							Spread:        spread,
-							Probabilities: probabilities,
+							Probabilities: probabilities.Probabilities,
 						}
 						mu.Lock()
 						spreadsWithProb = append(spreadsWithProb, spreadWithProb)
