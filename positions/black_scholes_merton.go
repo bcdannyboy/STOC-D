@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maxIterations = 100
+	maxIterations = 2000
 	epsilon       = 1e-8
 )
 
@@ -23,14 +23,44 @@ func CalculateOptionMetrics(option *tradier.Option, underlyingPrice, riskFreeRat
 	impliedVol := calculateImpliedVolatility(targetPrice, underlyingPrice, option.Strike, T, riskFreeRate, isCall)
 
 	// Calculate BSM metrics
-	result := calculateBSM(underlyingPrice, option.Strike, T, riskFreeRate, impliedVol, isCall)
-	result.ImpliedVolatility = impliedVol
+	d1 := (math.Log(underlyingPrice/option.Strike) + (riskFreeRate+0.5*impliedVol*impliedVol)*T) / (impliedVol * math.Sqrt(T))
+	d2 := d1 - impliedVol*math.Sqrt(T)
 
-	// Calculate additional Greeks
-	result.ShadowUpGamma, result.ShadowDownGamma = calculateShadowGamma(option, underlyingPrice, riskFreeRate, impliedVol)
-	result.SkewGamma = calculateSkewGamma(option, underlyingPrice, riskFreeRate, impliedVol)
+	var delta, price float64
+	if isCall {
+		delta = normCDF(d1)
+		price = underlyingPrice*normCDF(d1) - option.Strike*math.Exp(-riskFreeRate*T)*normCDF(d2)
+	} else {
+		delta = normCDF(d1) - 1
+		price = option.Strike*math.Exp(-riskFreeRate*T)*normCDF(-d2) - underlyingPrice*normCDF(-d1)
+	}
 
-	return result
+	gamma := normPDF(d1) / (underlyingPrice * impliedVol * math.Sqrt(T))
+	vega := underlyingPrice * normPDF(d1) * math.Sqrt(T)
+	theta := -(underlyingPrice*normPDF(d1)*impliedVol)/(2*math.Sqrt(T)) - riskFreeRate*option.Strike*math.Exp(-riskFreeRate*T)*normCDF(d2)
+	rho := option.Strike * T * math.Exp(-riskFreeRate*T) * normCDF(d2)
+
+	if !isCall {
+		theta = theta + riskFreeRate*option.Strike*math.Exp(-riskFreeRate*T)
+		rho = -option.Strike * T * math.Exp(-riskFreeRate*T) * normCDF(-d2)
+	}
+
+	// Calculate Shadow Gammas and Skew Gamma
+	shadowUpGamma, shadowDownGamma := calculateShadowGamma(option, underlyingPrice, riskFreeRate, impliedVol)
+	skewGamma := calculateSkewGamma(option, underlyingPrice, riskFreeRate, impliedVol)
+
+	return BSMResult{
+		Price:             price,
+		ImpliedVolatility: impliedVol,
+		Delta:             delta,
+		Gamma:             gamma,
+		Theta:             theta,
+		Vega:              vega,
+		Rho:               rho,
+		ShadowUpGamma:     shadowUpGamma,
+		ShadowDownGamma:   shadowDownGamma,
+		SkewGamma:         skewGamma,
+	}
 }
 
 func calculateImpliedVolatility(targetPrice, S, K, T, r float64, isCall bool) float64 {
@@ -42,6 +72,10 @@ func calculateImpliedVolatility(targetPrice, S, K, T, r float64, isCall bool) fl
 		diff := price - targetPrice
 		if math.Abs(diff) < epsilon {
 			return sigma
+		}
+
+		if math.Abs(vega) < epsilon {
+			break
 		}
 
 		sigma = sigma - diff/vega

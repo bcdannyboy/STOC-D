@@ -17,24 +17,48 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate, history)
 
 	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
-	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
 
-	extrinsicValue := math.Max(0, spreadCredit-math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike))
-	intrinsicValue := math.Max(0, math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit)
+	// Calculate intrinsic value correctly
+	var intrinsicValue float64
+	if spreadType == "Bull Put" {
+		if underlyingPrice < shortLeg.Option.Strike {
+			intrinsicValue = shortLeg.Option.Strike - longLeg.Option.Strike
+		} else {
+			intrinsicValue = 0
+		}
+	} else { // Bear Call
+		if underlyingPrice > shortLeg.Option.Strike {
+			intrinsicValue = longLeg.Option.Strike - shortLeg.Option.Strike
+		} else {
+			intrinsicValue = 0
+		}
+	}
 
-	spreadGreeks := calculateSpreadGreeks(shortLeg, longLeg)
-	spreadIV := calculateSpreadIV(shortLeg, longLeg, gkVolatility, parkinsonVolatility)
+	extrinsicValue := spreadCredit - intrinsicValue
+
+	// Use only the short leg's IV
+	shortLegIV := math.Max(shortLeg.Option.Greeks.MidIv, 0)
+
+	spreadImpliedVol := models.SpreadImpliedVol{
+		BidIV:               math.Max(shortLeg.Option.Greeks.BidIv, 0),
+		AskIV:               math.Max(shortLeg.Option.Greeks.AskIv, 0),
+		MidIV:               shortLegIV,
+		GARCHIV:             shortLeg.GARCHResult.Volatility,
+		BSMIV:               shortLeg.BSMResult.ImpliedVolatility,
+		GarmanKlassIV:       gkVolatility,
+		ParkinsonVolatility: parkinsonVolatility,
+		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
+	}
 
 	return models.OptionSpread{
 		ShortLeg:       shortLeg,
 		LongLeg:        longLeg,
 		SpreadType:     spreadType,
 		SpreadCredit:   spreadCredit,
-		SpreadBSMPrice: spreadBSMPrice,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
-		Greeks:         spreadGreeks,
-		ImpliedVol:     spreadIV,
+		ImpliedVol:     spreadImpliedVol,
+		Greeks:         calculateSpreadGreeks(shortLeg, longLeg),
 	}
 }
 
@@ -43,7 +67,7 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	garchResult := CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
 
 	intrinsicValue := calculateIntrinsicValue(option, underlyingPrice)
-	extrinsicValue := math.Max(0, (option.Bid+option.Ask)/2-intrinsicValue)
+	extrinsicValue := math.Max(0, bsmResult.Price-intrinsicValue)
 
 	return models.SpreadLeg{
 		Option:         option,
@@ -113,15 +137,15 @@ func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult 
 	}
 }
 
-func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
+func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64) models.SpreadImpliedVol {
 	return models.SpreadImpliedVol{
-		BidIV:               shortLeg.BidImpliedVol,
-		AskIV:               shortLeg.AskImpliedVol,
-		MidIV:               shortLeg.MidImpliedVol,
-		GARCHIV:             shortLeg.GARCHResult.Volatility,
-		BSMIV:               shortLeg.BSMResult.ImpliedVolatility,
-		GarmanKlassIV:       gkVolatility,
-		ParkinsonVolatility: parkinsonVolatility,
+		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
+		AskIV:         sanitizeFloat(shortLeg.AskImpliedVol - longLeg.AskImpliedVol),
+		MidIV:         sanitizeFloat(shortLeg.MidImpliedVol - longLeg.MidImpliedVol),
+		GARCHIV:       sanitizeFloat(shortLeg.GARCHResult.Volatility - longLeg.GARCHResult.Volatility),
+		BSMIV:         sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
+		ShortLegBSMIV: sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility),
+		GarmanKlassIV: gkVolatility,
 	}
 }
 
