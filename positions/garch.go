@@ -29,7 +29,7 @@ func EstimateGARCH11(returns []float64) GARCH11 {
 	initialGuess := GARCH11{Omega: 0.000001, Alpha: 0.1, Beta: 0.8}
 
 	// MCMC parameters
-	numIterations := 1000
+	numIterations := 2000
 	burnIn := 200
 	stepSize := 0.01
 
@@ -61,7 +61,7 @@ func EstimateGARCH11(returns []float64) GARCH11 {
 		}
 	}
 
-	// Average post burn-in chain for initial BFGS guess
+	// Average post burn-in chain for initial Nelder-Mead guess
 	avgParams := GARCH11{}
 	for i := burnIn; i < numIterations; i++ {
 		avgParams.Omega += chain[i].Omega
@@ -72,16 +72,16 @@ func EstimateGARCH11(returns []float64) GARCH11 {
 	avgParams.Alpha /= float64(numIterations - burnIn)
 	avgParams.Beta /= float64(numIterations - burnIn)
 
-	// BFGS optimization
+	// Nelder-Mead optimization
 	problem := optimize.Problem{
 		Func: func(x []float64) float64 {
 			return -GARCH11{Omega: x[0], Alpha: x[1], Beta: x[2]}.LogLikelihood(returns)
 		},
 	}
 
-	result, err := optimize.Minimize(problem, []float64{avgParams.Omega, avgParams.Alpha, avgParams.Beta}, nil, &optimize.BFGS{})
+	result, err := optimize.Minimize(problem, []float64{avgParams.Omega, avgParams.Alpha, avgParams.Beta}, nil, &optimize.NelderMead{})
 	if err != nil {
-		fmt.Println("BFGS optimization failed:", err)
+		fmt.Println("Nelder-Mead optimization failed:", err)
 		return avgParams
 	}
 

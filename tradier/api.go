@@ -34,7 +34,7 @@ func GET_QUOTES(Symbol, Start, End, Interval, Token string) (*QuoteHistory, erro
 	err = json.Unmarshal(responseData, quoteHistory)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response data: %s", err)
+		return nil, fmt.Errorf("failed to unmarshal response data: %s", err.Error())
 	}
 
 	return quoteHistory, nil

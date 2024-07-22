@@ -1,3 +1,4 @@
+// positions/types.go
 package positions
 
 import "github.com/bcdannyboy/dquant/tradier"
@@ -54,9 +55,25 @@ type SpreadLeg struct {
 type OptionSpread struct {
 	ShortLeg       SpreadLeg
 	LongLeg        SpreadLeg
-	SpreadType     string // "Bull Put" or "Bear Call"
+	SpreadType     string
 	SpreadCredit   float64
 	SpreadBSMPrice float64
 	ExtrinsicValue float64
 	IntrinsicValue float64
+	Greeks         BSMResult
+	ImpliedVol     SpreadImpliedVol
+}
+
+type SpreadImpliedVol struct {
+	BidIV         float64
+	AskIV         float64
+	MidIV         float64
+	GARCHIV       float64
+	BSMIV         float64
+	GarmanKlassIV float64
+}
+
+type SpreadWithProbabilities struct {
+	Spread        OptionSpread
+	Probabilities map[string]float64
 }
