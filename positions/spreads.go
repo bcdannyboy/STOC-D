@@ -23,20 +23,18 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 	intrinsicValue := math.Max(0, math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit)
 
 	spreadGreeks := calculateSpreadGreeks(shortLeg, longLeg)
-	spreadIV := calculateSpreadIV(shortLeg, longLeg, gkVolatility)
+	spreadIV := calculateSpreadIV(shortLeg, longLeg, gkVolatility, parkinsonVolatility)
 
 	return models.OptionSpread{
-		ShortLeg:            shortLeg,
-		LongLeg:             longLeg,
-		SpreadType:          spreadType,
-		SpreadCredit:        spreadCredit,
-		SpreadBSMPrice:      spreadBSMPrice,
-		ExtrinsicValue:      extrinsicValue,
-		IntrinsicValue:      intrinsicValue,
-		Greeks:              spreadGreeks,
-		ImpliedVol:          spreadIV,
-		GarmanKlassIV:       gkVolatility,
-		ParkinsonVolatility: parkinsonVolatility,
+		ShortLeg:       shortLeg,
+		LongLeg:        longLeg,
+		SpreadType:     spreadType,
+		SpreadCredit:   spreadCredit,
+		SpreadBSMPrice: spreadBSMPrice,
+		ExtrinsicValue: extrinsicValue,
+		IntrinsicValue: intrinsicValue,
+		Greeks:         spreadGreeks,
+		ImpliedVol:     spreadIV,
 	}
 }
 
@@ -115,14 +113,15 @@ func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult 
 	}
 }
 
-func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64) models.SpreadImpliedVol {
+func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
 	return models.SpreadImpliedVol{
-		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
-		AskIV:         sanitizeFloat(shortLeg.AskImpliedVol - longLeg.AskImpliedVol),
-		MidIV:         sanitizeFloat(shortLeg.MidImpliedVol - longLeg.MidImpliedVol),
-		GARCHIV:       sanitizeFloat(shortLeg.GARCHResult.Volatility - longLeg.GARCHResult.Volatility),
-		BSMIV:         sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
-		GarmanKlassIV: gkVolatility,
+		BidIV:               shortLeg.BidImpliedVol,
+		AskIV:               shortLeg.AskImpliedVol,
+		MidIV:               shortLeg.MidImpliedVol,
+		GARCHIV:             shortLeg.GARCHResult.Volatility,
+		BSMIV:               shortLeg.BSMResult.ImpliedVolatility,
+		GarmanKlassIV:       gkVolatility,
+		ParkinsonVolatility: parkinsonVolatility,
 	}
 }
 
@@ -152,17 +151,6 @@ func filterCallOptions(options []tradier.Option) []tradier.Option {
 		}
 	}
 	return calls
-}
-
-func FilterSpreadsByProbability(spreads []models.SpreadWithProbabilities, minProbability float64) []models.SpreadWithProbabilities {
-	var filteredSpreads []models.SpreadWithProbabilities
-	for _, s := range spreads {
-		avgProbability := (s.Probabilities["Normal"] + s.Probabilities["StudentT"] + s.Probabilities["GBM"] + s.Probabilities["PoissonJump"]) / 4
-		if avgProbability >= minProbability {
-			filteredSpreads = append(filteredSpreads, s)
-		}
-	}
-	return filteredSpreads
 }
 
 func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
@@ -234,12 +222,11 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 					}
 
 					returnOnRisk := calculateReturnOnRisk(spread)
-					fmt.Printf("%s Spread: %+v, Return on Risk: %.4f\n", spreadType, spread, returnOnRisk)
 					if returnOnRisk >= minReturnOnRisk {
-						probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
+						probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
 						spreadWithProb := models.SpreadWithProbabilities{
-							Spread:        spread,
-							Probabilities: probabilities.Probabilities,
+							Spread:      spread,
+							Probability: probabilityResult,
 						}
 						mu.Lock()
 						spreadsWithProb = append(spreadsWithProb, spreadWithProb)
@@ -256,6 +243,16 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	fmt.Printf("\nIdentified %d %s Spreads meeting minimum return on risk\n", len(spreadsWithProb), spreadType)
 	return spreadsWithProb
+}
+
+func FilterSpreadsByProbability(spreads []models.SpreadWithProbabilities, minProbability float64) []models.SpreadWithProbabilities {
+	var filteredSpreads []models.SpreadWithProbabilities
+	for _, s := range spreads {
+		if s.Probability.AverageProbability >= minProbability {
+			filteredSpreads = append(filteredSpreads, s)
+		}
+	}
+	return filteredSpreads
 }
 
 func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {

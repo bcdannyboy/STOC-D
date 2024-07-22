@@ -74,9 +74,7 @@ func main() {
 	}
 
 	sort.Slice(spreads, func(i, j int) bool {
-		avgProbI := averageProbability(spreads[i].Probabilities)
-		avgProbJ := averageProbability(spreads[j].Probabilities)
-		return avgProbI > avgProbJ
+		return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
 	})
 
 	if len(spreads) > 10 {
@@ -95,17 +93,4 @@ func main() {
 		fmt.Printf("Error writing to file %s: %s\n", f, err.Error())
 		return
 	}
-}
-
-func averageProbability(probabilities map[string]float64) float64 {
-	total := 0.0
-	count := 0
-	for _, prob := range probabilities {
-		total += prob
-		count++
-	}
-	if count == 0 {
-		return 0
-	}
-	return total / float64(count)
 }

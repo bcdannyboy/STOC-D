@@ -14,40 +14,43 @@ const (
 	timeSteps      = 252 // Assuming 252 trading days in a year
 )
 
-func MonteCarloSimulationBatch(spreads []models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) []models.SpreadWithProbabilities {
-	results := make([]models.SpreadWithProbabilities, len(spreads))
+func MonteCarloSimulationBatch(spreads []models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) []models.ProbabilityResult {
+	results := make([]models.ProbabilityResult, len(spreads))
 	var wg sync.WaitGroup
-	resultChan := make(chan models.SpreadWithProbabilities, len(spreads))
 
 	for i := range spreads {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			probabilities := monteCarloSimulation(spreads[i], underlyingPrice, riskFreeRate, daysToExpiration)
-			resultChan <- models.SpreadWithProbabilities{Spread: spreads[i], Probabilities: probabilities}
+			results[i] = monteCarloSimulation(spreads[i], underlyingPrice, riskFreeRate, daysToExpiration)
 		}(i)
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	for result := range resultChan {
-		results = append(results, result)
-	}
-
+	wg.Wait()
 	return results
 }
 
-func monteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) map[string]float64 {
+func monteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) models.ProbabilityResult {
 	results := make(map[string]float64)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
+	volatilities := []struct {
+		name string
+		vol  float64
+	}{
+		{"BidIV", spread.ImpliedVol.BidIV},
+		{"AskIV", spread.ImpliedVol.AskIV},
+		{"MidIV", spread.ImpliedVol.MidIV},
+		{"GARCHIV", spread.ImpliedVol.GARCHIV},
+		{"BSMIV", spread.ImpliedVol.BSMIV},
+		{"GarmanKlassIV", spread.ImpliedVol.GarmanKlassIV},
+		{"ParkinsonVolatility", spread.ImpliedVol.ParkinsonVolatility},
+	}
+
 	simulationFuncs := []struct {
 		name string
-		fn   func(models.OptionSpread, float64, float64, int) float64
+		fn   func(models.OptionSpread, float64, float64, float64, int) float64
 	}{
 		{"Normal", simulateNormal},
 		{"StudentT", simulateStudentT},
@@ -55,34 +58,44 @@ func monteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{"PoissonJump", simulatePoissonJump},
 	}
 
-	for _, sim := range simulationFuncs {
-		wg.Add(1)
-		go func(name string, simFunc func(models.OptionSpread, float64, float64, int) float64) {
-			defer wg.Done()
-			probability := simFunc(spread, underlyingPrice, riskFreeRate, daysToExpiration)
-			mu.Lock()
-			results[name] = probability
-			mu.Unlock()
-		}(sim.name, sim.fn)
+	for _, vol := range volatilities {
+		for _, sim := range simulationFuncs {
+			wg.Add(1)
+			go func(volName, simName string, volatility float64, simFunc func(models.OptionSpread, float64, float64, float64, int) float64) {
+				defer wg.Done()
+				probability := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration)
+				mu.Lock()
+				results[volName+"_"+simName] = probability
+				mu.Unlock()
+			}(vol.name, sim.name, vol.vol, sim.fn)
+		}
 	}
 
 	wg.Wait()
-	return results
+
+	// Calculate average probability
+	var totalProb float64
+	for _, prob := range results {
+		totalProb += prob
+	}
+	averageProbability := totalProb / float64(len(results))
+
+	return models.ProbabilityResult{
+		Probabilities:      results,
+		AverageProbability: averageProbability,
+	}
 }
 
-func simulateNormal(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) float64 {
-	volatility := models.CalculateAverageVolatility(spread)
+func simulateNormal(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int) float64 {
 	return simulateWithDistribution(spread, underlyingPrice, riskFreeRate, daysToExpiration, volatility, rand.NormFloat64)
 }
 
-func simulateStudentT(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) float64 {
-	volatility := models.CalculateAverageVolatility(spread)
+func simulateStudentT(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int) float64 {
 	studentT := distuv.StudentsT{Nu: 5, Mu: 0, Sigma: 1}
 	return simulateWithDistribution(spread, underlyingPrice, riskFreeRate, daysToExpiration, volatility, studentT.Rand)
 }
 
-func simulateGBM(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) float64 {
-	volatility := models.CalculateAverageVolatility(spread)
+func simulateGBM(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int) float64 {
 	dt := float64(daysToExpiration) / 252.0 / float64(timeSteps)
 
 	profitCount := 0
@@ -101,8 +114,7 @@ func simulateGBM(spread models.OptionSpread, underlyingPrice, riskFreeRate float
 	return float64(profitCount) / float64(numSimulations)
 }
 
-func simulatePoissonJump(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) float64 {
-	volatility := models.CalculateAverageVolatility(spread)
+func simulatePoissonJump(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int) float64 {
 	dt := float64(daysToExpiration) / 252.0 / float64(timeSteps)
 	lambda := 1.0 // Average number of jumps per year
 	jumpMean := 0.0

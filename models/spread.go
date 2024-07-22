@@ -61,17 +61,23 @@ type GarmanKlassResult struct {
 }
 
 type SpreadImpliedVol struct {
-	BidIV         float64
-	AskIV         float64
-	MidIV         float64
-	GARCHIV       float64
-	BSMIV         float64
-	GarmanKlassIV float64
+	BidIV               float64
+	AskIV               float64
+	MidIV               float64
+	GARCHIV             float64
+	BSMIV               float64
+	GarmanKlassIV       float64
+	ParkinsonVolatility float64
 }
 
 type SpreadWithProbabilities struct {
-	Spread        OptionSpread
-	Probabilities map[string]float64
+	Spread      OptionSpread
+	Probability ProbabilityResult
+}
+
+type ProbabilityResult struct {
+	Probabilities      map[string]float64
+	AverageProbability float64
 }
 
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {

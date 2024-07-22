@@ -62,7 +62,6 @@ type OptionSpread struct {
 	Greeks         BSMResult
 	ImpliedVol     SpreadImpliedVol
 }
-
 type SpreadImpliedVol struct {
 	BidIV         float64
 	AskIV         float64
