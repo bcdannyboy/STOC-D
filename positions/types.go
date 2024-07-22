@@ -1,5 +1,7 @@
 package positions
 
+import "github.com/bcdannyboy/dquant/tradier"
+
 type BSMResult struct {
 	Price             float64
 	ImpliedVolatility float64
@@ -35,4 +37,26 @@ type ParkinsonsResult struct {
 type GarmanKlassResult struct {
 	Period     string
 	Volatility float64
+}
+
+type SpreadLeg struct {
+	Option            tradier.Option
+	BSMResult         BSMResult
+	GARCHResult       GARCHResult
+	GarmanKlassResult GarmanKlassResult
+	BidImpliedVol     float64
+	AskImpliedVol     float64
+	MidImpliedVol     float64
+	ExtrinsicValue    float64
+	IntrinsicValue    float64
+}
+
+type OptionSpread struct {
+	ShortLeg       SpreadLeg
+	LongLeg        SpreadLeg
+	SpreadType     string // "Bull Put" or "Bear Call"
+	SpreadCredit   float64
+	SpreadBSMPrice float64
+	ExtrinsicValue float64
+	IntrinsicValue float64
 }

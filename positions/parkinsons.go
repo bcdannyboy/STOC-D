@@ -2,7 +2,6 @@ package positions
 
 import (
 	"math"
-	"time"
 
 	"github.com/bcdannyboy/dquant/tradier"
 )
@@ -168,9 +167,4 @@ func AnnualizeStandardDeviation(stdDev float64, period string) float64 {
 	}
 
 	return stdDev * math.Sqrt(252/tradingDays)
-}
-
-// Helper function to parse date strings
-func parseDate(dateStr string) (time.Time, error) {
-	return time.Parse("2006-01-02", dateStr)
 }
