@@ -40,6 +40,17 @@ func CalculateParkinsonsMetrics(history tradier.QuoteHistory) []ParkinsonsResult
 	return results
 }
 
+func CalculateParkinsonsVolatility(history tradier.QuoteHistory) float64 {
+	// Calculate for the last day only
+	if len(history.History.Day) < 1 {
+		return 0
+	}
+	lastDay := history.History.Day[len(history.History.Day)-1]
+	highs := []float64{lastDay.High}
+	lows := []float64{lastDay.Low}
+	return AnnualizeParkinson(calculateParkinsonsNumber(highs, lows), "Last Day")
+}
+
 func calculatePeriodMetrics(history tradier.QuoteHistory, days int) (float64, float64) {
 	if len(history.History.Day) < days {
 		return 0, 0

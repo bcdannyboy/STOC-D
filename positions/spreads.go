@@ -12,7 +12,7 @@ import (
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
-func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory) models.OptionSpread {
+func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
 	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate, history)
 	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate, history)
 
@@ -23,47 +23,39 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 	intrinsicValue := math.Max(0, math.Abs(shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit)
 
 	spreadGreeks := calculateSpreadGreeks(shortLeg, longLeg)
-	spreadIV := calculateSpreadIV(shortLeg, longLeg)
+	spreadIV := calculateSpreadIV(shortLeg, longLeg, gkVolatility)
 
 	return models.OptionSpread{
-		ShortLeg:       shortLeg,
-		LongLeg:        longLeg,
-		SpreadType:     spreadType,
-		SpreadCredit:   spreadCredit,
-		SpreadBSMPrice: spreadBSMPrice,
-		ExtrinsicValue: extrinsicValue,
-		IntrinsicValue: intrinsicValue,
-		Greeks:         spreadGreeks,
-		ImpliedVol:     spreadIV,
+		ShortLeg:            shortLeg,
+		LongLeg:             longLeg,
+		SpreadType:          spreadType,
+		SpreadCredit:        spreadCredit,
+		SpreadBSMPrice:      spreadBSMPrice,
+		ExtrinsicValue:      extrinsicValue,
+		IntrinsicValue:      intrinsicValue,
+		Greeks:              spreadGreeks,
+		ImpliedVol:          spreadIV,
+		GarmanKlassIV:       gkVolatility,
+		ParkinsonVolatility: parkinsonVolatility,
 	}
 }
 
 func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory) models.SpreadLeg {
 	bsmResult := CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
 	garchResult := CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
-	garmanKlassResults := CalculateGarmanKlassVolatility(history)
-
-	var garmanKlassResult models.GarmanKlassResult
-	if len(garmanKlassResults) > 0 {
-		garmanKlassResult = models.GarmanKlassResult{
-			Period:     garmanKlassResults[0].Period,
-			Volatility: garmanKlassResults[0].Volatility,
-		}
-	}
 
 	intrinsicValue := calculateIntrinsicValue(option, underlyingPrice)
 	extrinsicValue := math.Max(0, (option.Bid+option.Ask)/2-intrinsicValue)
 
 	return models.SpreadLeg{
-		Option:            option,
-		BSMResult:         sanitizeBSMResult(bsmResult),
-		GARCHResult:       sanitizeGARCHResult(garchResult),
-		GarmanKlassResult: garmanKlassResult,
-		BidImpliedVol:     math.Max(0, option.Greeks.BidIv),
-		AskImpliedVol:     math.Max(0, option.Greeks.AskIv),
-		MidImpliedVol:     math.Max(0, option.Greeks.MidIv),
-		ExtrinsicValue:    extrinsicValue,
-		IntrinsicValue:    intrinsicValue,
+		Option:         option,
+		BSMResult:      sanitizeBSMResult(bsmResult),
+		GARCHResult:    sanitizeGARCHResult(garchResult),
+		BidImpliedVol:  math.Max(0, option.Greeks.BidIv),
+		AskImpliedVol:  math.Max(0, option.Greeks.AskIv),
+		MidImpliedVol:  math.Max(0, option.Greeks.MidIv),
+		ExtrinsicValue: extrinsicValue,
+		IntrinsicValue: intrinsicValue,
 	}
 }
 
@@ -123,14 +115,14 @@ func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult 
 	}
 }
 
-func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg) models.SpreadImpliedVol {
+func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64) models.SpreadImpliedVol {
 	return models.SpreadImpliedVol{
 		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
 		AskIV:         sanitizeFloat(shortLeg.AskImpliedVol - longLeg.AskImpliedVol),
 		MidIV:         sanitizeFloat(shortLeg.MidImpliedVol - longLeg.MidImpliedVol),
 		GARCHIV:       sanitizeFloat(shortLeg.GARCHResult.Volatility - longLeg.GARCHResult.Volatility),
 		BSMIV:         sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
-		GarmanKlassIV: sanitizeFloat(shortLeg.GarmanKlassResult.Volatility - longLeg.GarmanKlassResult.Volatility),
+		GarmanKlassIV: gkVolatility,
 	}
 }
 
@@ -185,6 +177,13 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
 
+	// Calculate Garman-Klass volatility for the underlying
+	gkResult := CalculateGarmanKlassVolatility(history)
+	gkVolatility := gkResult.Volatility
+
+	// Calculate Parkinson's volatility for the underlying
+	parkinsonVolatility := CalculateParkinsonsVolatility(history)
+
 	totalTasks := countTotalTasks(chain, strings.ToLower(spreadType[:3])) // "put" for Bull Put, "cal" for Bear Call
 	progress := make(chan int, totalTasks)
 
@@ -220,15 +219,15 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 					var spread models.OptionSpread
 					if spreadType == "Bull Put" {
 						if options[i].Strike > options[j].Strike {
-							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history)
+							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
 						} else {
-							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history)
+							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
 						}
 					} else if spreadType == "Bear Call" {
 						if options[i].Strike < options[j].Strike {
-							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history)
+							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
 						} else {
-							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history)
+							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
 						}
 					} else {
 						continue

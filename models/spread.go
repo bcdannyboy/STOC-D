@@ -17,15 +17,17 @@ type SpreadLeg struct {
 }
 
 type OptionSpread struct {
-	ShortLeg       SpreadLeg
-	LongLeg        SpreadLeg
-	SpreadType     string
-	SpreadCredit   float64
-	SpreadBSMPrice float64
-	ExtrinsicValue float64
-	IntrinsicValue float64
-	Greeks         BSMResult
-	ImpliedVol     SpreadImpliedVol
+	ShortLeg            SpreadLeg
+	LongLeg             SpreadLeg
+	SpreadType          string
+	SpreadCredit        float64
+	SpreadBSMPrice      float64
+	ExtrinsicValue      float64
+	IntrinsicValue      float64
+	Greeks              BSMResult
+	ImpliedVol          SpreadImpliedVol
+	GarmanKlassIV       float64
+	ParkinsonVolatility float64
 }
 
 type BSMResult struct {
