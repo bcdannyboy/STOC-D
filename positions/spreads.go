@@ -54,6 +54,26 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	}
 }
 
+func filterPutOptions(options []tradier.Option) []tradier.Option {
+	var puts []tradier.Option
+	for _, opt := range options {
+		if opt.OptionType == "put" {
+			puts = append(puts, opt)
+		}
+	}
+	return puts
+}
+
+func filterCallOptions(options []tradier.Option) []tradier.Option {
+	var calls []tradier.Option
+	for _, opt := range options {
+		if opt.OptionType == "call" {
+			calls = append(calls, opt)
+		}
+	}
+	return calls
+}
+
 // Update the function signatures to include the history parameter
 func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory) []OptionSpread {
 	var spreads []OptionSpread
@@ -89,24 +109,4 @@ func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPr
 	}
 
 	return spreads
-}
-
-func filterPutOptions(options []tradier.Option) []tradier.Option {
-	var puts []tradier.Option
-	for _, opt := range options {
-		if opt.OptionType == "put" {
-			puts = append(puts, opt)
-		}
-	}
-	return puts
-}
-
-func filterCallOptions(options []tradier.Option) []tradier.Option {
-	var calls []tradier.Option
-	for _, opt := range options {
-		if opt.OptionType == "call" {
-			calls = append(calls, opt)
-		}
-	}
-	return calls
 }

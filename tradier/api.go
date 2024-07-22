@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 func GET_QUOTES(Symbol, Start, End, Interval, Token string) (*QuoteHistory, error) {
@@ -39,7 +40,7 @@ func GET_QUOTES(Symbol, Start, End, Interval, Token string) (*QuoteHistory, erro
 	return quoteHistory, nil
 }
 
-func GET_OPTIONS_CHAIN(Symbol, Token string) (map[string]*OptionChain, error) {
+func GET_OPTIONS_CHAIN(Symbol, Token string, minDTE, maxDTE int) (map[string]*OptionChain, error) {
 	expiratons_apiURL := fmt.Sprintf("https://api.tradier.com/v1/markets/options/expirations?symbol=%s&includeAllRoots=true&strikes=true&contractSize=true&expirationType=true", Symbol)
 
 	eu, _ := url.ParseRequestURI(expiratons_apiURL)
@@ -65,9 +66,19 @@ func GET_OPTIONS_CHAIN(Symbol, Token string) (map[string]*OptionChain, error) {
 	}
 
 	ChainMap := make(map[string]*OptionChain)
+	today := time.Now()
 
 	for _, expiration := range expiratons_optionChain.Expirations.Expiration {
 		exp_date := expiration.Date
+		expirationTime, err := time.Parse("2006-01-02", exp_date)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse expiration date: %s", err)
+		}
+
+		dte := int(expirationTime.Sub(today).Hours() / 24)
+		if dte < minDTE || dte > maxDTE {
+			continue
+		}
 
 		chain_apiURL := fmt.Sprintf("https://api.tradier.com/v1/markets/options/chains?symbol=%s&expiration=%s&greeks=true", Symbol, exp_date)
 		cu, _ := url.ParseRequestURI(chain_apiURL)
