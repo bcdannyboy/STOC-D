@@ -70,9 +70,14 @@ func GET_OPTIONS_CHAIN(Symbol, Token string, minDTE, maxDTE int) (map[string]*Op
 
 	for _, expiration := range expiratons_optionChain.Expirations.Expiration {
 		exp_date := expiration.Date
+		if exp_date == "" {
+			continue // Skip empty expiration dates
+		}
+
 		expirationTime, err := time.Parse("2006-01-02", exp_date)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse expiration date: %s", err)
+			fmt.Printf("Warning: failed to parse expiration date %s: %s\n", exp_date, err)
+			continue
 		}
 
 		dte := int(expirationTime.Sub(today).Hours() / 24)
@@ -102,7 +107,12 @@ func GET_OPTIONS_CHAIN(Symbol, Token string, minDTE, maxDTE int) (map[string]*Op
 			return nil, fmt.Errorf("failed to unmarshal chain response data: %s", err)
 		}
 
+		optionChain.ExpirationDate = exp_date // Set the expiration date explicitly
 		ChainMap[exp_date] = optionChain
+	}
+
+	if len(ChainMap) == 0 {
+		return nil, fmt.Errorf("no valid option chains found for the given criteria")
 	}
 
 	return ChainMap, nil

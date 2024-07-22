@@ -23,7 +23,7 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	Symbol := "AAPL"
+	Symbol := "EBS"
 	minDTE := 5
 	maxDTE := 45
 	rfr := 0.0416

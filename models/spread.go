@@ -1,4 +1,3 @@
-// models/spread.go
 package models
 
 import (

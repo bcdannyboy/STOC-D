@@ -1,9 +1,9 @@
-// positions/spreads.go
 package positions
 
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,13 +19,10 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
 	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
 
-	extrinsicValue := math.Max(spreadCredit-(longOpt.Strike-shortOpt.Strike), 0)
-	intrinsicValue := math.Max((longOpt.Strike-shortOpt.Strike)-spreadCredit, 0)
+	extrinsicValue := math.Max(spreadCredit-(shortLeg.Option.Strike-longLeg.Option.Strike), 0)
+	intrinsicValue := math.Max((shortLeg.Option.Strike-longLeg.Option.Strike)-spreadCredit, 0)
 
-	// Calculate spread Greeks
 	spreadGreeks := calculateSpreadGreeks(shortLeg, longLeg)
-
-	// Calculate spread implied volatilities
 	spreadIV := calculateSpreadIV(shortLeg, longLeg)
 
 	return models.OptionSpread{
@@ -44,9 +41,8 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory) models.SpreadLeg {
 	bsmResult := CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
 	garchResult := CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
-
-	// Calculate Garman-Klass volatility
 	garmanKlassResults := CalculateGarmanKlassVolatility(history)
+
 	var garmanKlassResult models.GarmanKlassResult
 	if len(garmanKlassResults) > 0 {
 		garmanKlassResult = models.GarmanKlassResult{
@@ -59,39 +55,9 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	intrinsicValue := math.Max(underlyingPrice-option.Strike, 0)
 
 	return models.SpreadLeg{
-		Option: option,
-		BSMResult: models.BSMResult{
-			Price:             bsmResult.Price,
-			ImpliedVolatility: bsmResult.ImpliedVolatility,
-			Delta:             bsmResult.Delta,
-			Gamma:             bsmResult.Gamma,
-			Theta:             bsmResult.Theta,
-			Vega:              bsmResult.Vega,
-			Rho:               bsmResult.Rho,
-			ShadowUpGamma:     bsmResult.ShadowUpGamma,
-			ShadowDownGamma:   bsmResult.ShadowDownGamma,
-			SkewGamma:         bsmResult.SkewGamma,
-		},
-		GARCHResult: models.GARCHResult{
-			Params: models.GARCH11{
-				Omega: garchResult.Params.Omega,
-				Alpha: garchResult.Params.Alpha,
-				Beta:  garchResult.Params.Beta,
-			},
-			Volatility: garchResult.Volatility,
-			Greeks: models.BSMResult{
-				Price:             garchResult.Greeks.Price,
-				ImpliedVolatility: garchResult.Greeks.ImpliedVolatility,
-				Delta:             garchResult.Greeks.Delta,
-				Gamma:             garchResult.Greeks.Gamma,
-				Theta:             garchResult.Greeks.Theta,
-				Vega:              garchResult.Greeks.Vega,
-				Rho:               garchResult.Greeks.Rho,
-				ShadowUpGamma:     garchResult.Greeks.ShadowUpGamma,
-				ShadowDownGamma:   garchResult.Greeks.ShadowDownGamma,
-				SkewGamma:         garchResult.Greeks.SkewGamma,
-			},
-		},
+		Option:            option,
+		BSMResult:         sanitizeBSMResult(bsmResult),
+		GARCHResult:       sanitizeGARCHResult(garchResult),
 		GarmanKlassResult: garmanKlassResult,
 		BidImpliedVol:     option.Greeks.BidIv,
 		AskImpliedVol:     option.Greeks.AskIv,
@@ -101,43 +67,77 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	}
 }
 
+func sanitizeBSMResult(result BSMResult) models.BSMResult {
+	return models.BSMResult{
+		Price:             sanitizeFloat(result.Price),
+		ImpliedVolatility: sanitizeFloat(result.ImpliedVolatility),
+		Delta:             sanitizeFloat(result.Delta),
+		Gamma:             sanitizeFloat(result.Gamma),
+		Theta:             sanitizeFloat(result.Theta),
+		Vega:              sanitizeFloat(result.Vega),
+		Rho:               sanitizeFloat(result.Rho),
+		ShadowUpGamma:     sanitizeFloat(result.ShadowUpGamma),
+		ShadowDownGamma:   sanitizeFloat(result.ShadowDownGamma),
+		SkewGamma:         sanitizeFloat(result.SkewGamma),
+	}
+}
+
+func sanitizeGARCHResult(result GARCHResult) models.GARCHResult {
+	return models.GARCHResult{
+		Params: models.GARCH11{
+			Omega: sanitizeFloat(result.Params.Omega),
+			Alpha: sanitizeFloat(result.Params.Alpha),
+			Beta:  sanitizeFloat(result.Params.Beta),
+		},
+		Volatility: sanitizeFloat(result.Volatility),
+		Greeks:     sanitizeBSMResult(result.Greeks),
+	}
+}
+
+func sanitizeFloat(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
+}
+
 func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult {
 	return models.BSMResult{
-		Price:             shortLeg.BSMResult.Price - longLeg.BSMResult.Price,
-		ImpliedVolatility: shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility,
-		Delta:             shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta,
-		Gamma:             shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma,
-		Theta:             shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta,
-		Vega:              shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega,
-		Rho:               shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho,
-		ShadowUpGamma:     shortLeg.BSMResult.ShadowUpGamma - longLeg.BSMResult.ShadowUpGamma,
-		ShadowDownGamma:   shortLeg.BSMResult.ShadowDownGamma - longLeg.BSMResult.ShadowDownGamma,
-		SkewGamma:         shortLeg.BSMResult.SkewGamma - longLeg.BSMResult.SkewGamma,
+		Price:             sanitizeFloat(shortLeg.BSMResult.Price - longLeg.BSMResult.Price),
+		ImpliedVolatility: sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
+		Delta:             sanitizeFloat(shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta),
+		Gamma:             sanitizeFloat(shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma),
+		Theta:             sanitizeFloat(shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta),
+		Vega:              sanitizeFloat(shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega),
+		Rho:               sanitizeFloat(shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho),
+		ShadowUpGamma:     sanitizeFloat(shortLeg.BSMResult.ShadowUpGamma - longLeg.BSMResult.ShadowUpGamma),
+		ShadowDownGamma:   sanitizeFloat(shortLeg.BSMResult.ShadowDownGamma - longLeg.BSMResult.ShadowDownGamma),
+		SkewGamma:         sanitizeFloat(shortLeg.BSMResult.SkewGamma - longLeg.BSMResult.SkewGamma),
 	}
 }
 
 func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg) models.SpreadImpliedVol {
 	return models.SpreadImpliedVol{
-		BidIV:         shortLeg.BidImpliedVol - longLeg.BidImpliedVol,
-		AskIV:         shortLeg.AskImpliedVol - longLeg.AskImpliedVol,
-		MidIV:         shortLeg.MidImpliedVol - longLeg.MidImpliedVol,
-		GARCHIV:       shortLeg.GARCHResult.Volatility - longLeg.GARCHResult.Volatility,
-		BSMIV:         shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility,
-		GarmanKlassIV: shortLeg.GarmanKlassResult.Volatility - longLeg.GarmanKlassResult.Volatility,
+		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
+		AskIV:         sanitizeFloat(shortLeg.AskImpliedVol - longLeg.AskImpliedVol),
+		MidIV:         sanitizeFloat(shortLeg.MidImpliedVol - longLeg.MidImpliedVol),
+		GARCHIV:       sanitizeFloat(shortLeg.GARCHResult.Volatility - longLeg.GARCHResult.Volatility),
+		BSMIV:         sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
+		GarmanKlassIV: sanitizeFloat(shortLeg.GarmanKlassResult.Volatility - longLeg.GarmanKlassResult.Volatility),
 	}
 }
 
 func calculateReturnOnRisk(spread models.OptionSpread) float64 {
 	if spread.SpreadType == "Bull Put" {
-		maxRisk := spread.LongLeg.Option.Strike - spread.ShortLeg.Option.Strike - spread.SpreadCredit
+		maxRisk := spread.ShortLeg.Option.Strike - spread.LongLeg.Option.Strike - spread.SpreadCredit
 		if maxRisk <= 0 {
-			return 0 // Avoid division by zero
+			return 0 // Avoid division by zero or negative risk
 		}
 		return spread.SpreadCredit / maxRisk
 	} else if spread.SpreadType == "Bear Call" {
-		maxRisk := spread.LongLeg.Option.Strike - spread.ShortLeg.Option.Strike - spread.SpreadCredit
+		maxRisk := spread.ShortLeg.Option.Strike - spread.LongLeg.Option.Strike - spread.SpreadCredit
 		if maxRisk <= 0 {
-			return 0 // Avoid division by zero
+			return 0 // Avoid division by zero or negative risk
 		}
 		return spread.SpreadCredit / maxRisk
 	}
@@ -175,106 +175,96 @@ func FilterSpreadsByProbability(spreads []models.SpreadWithProbabilities, minPro
 	return filteredSpreads
 }
 
-func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
+func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
 	var spreadsWithProb []models.SpreadWithProbabilities
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	totalTasks := countTotalTasks(chain, "put")
+	if len(chain) == 0 {
+		fmt.Printf("Warning: Option chain is empty for %s spreads\n", spreadType)
+		return spreadsWithProb
+	}
+
+	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
+
+	totalTasks := countTotalTasks(chain, strings.ToLower(spreadType[:3])) // "put" for Bull Put, "cal" for Bear Call
 	progress := make(chan int, totalTasks)
 
-	go printProgress("Bull Put Spreads", progress, totalTasks)
+	go printProgress(fmt.Sprintf("%s Spreads", spreadType), progress, totalTasks)
 
-	for _, expiration := range chain {
+	for exp_date, expiration := range chain {
 		wg.Add(1)
-		go func(expiration *tradier.OptionChain) {
+		go func(exp_date string, expiration *tradier.OptionChain) {
 			defer wg.Done()
-			puts := filterPutOptions(expiration.Options.Option)
+			var options []tradier.Option
+			if spreadType == "Bull Put" {
+				options = filterPutOptions(expiration.Options.Option)
+			} else {
+				options = filterCallOptions(expiration.Options.Option)
+			}
 
-			expirationDate, err := time.Parse("2006-01-02", expiration.ExpirationDate)
+			if len(options) == 0 {
+				fmt.Printf("Warning: No %s options found for expiration date %s\n", strings.ToLower(spreadType[:3]), exp_date)
+				return
+			}
+
+			expirationDate, err := time.Parse("2006-01-02", exp_date)
 			if err != nil {
-				fmt.Printf("Error parsing expiration date: %v\n", err)
+				fmt.Printf("Error parsing expiration date %s: %v\n", exp_date, err)
 				return
 			}
 			daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
 
-			for i := 0; i < len(puts)-1; i++ {
-				for j := i + 1; j < len(puts); j++ {
-					if puts[i].Strike < puts[j].Strike {
-						spread := createOptionSpread(puts[i], puts[j], "Bull Put", underlyingPrice, riskFreeRate, history)
-						returnOnRisk := calculateReturnOnRisk(spread)
-						if returnOnRisk >= minReturnOnRisk {
-							probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0].Probabilities
-							spreadWithProb := models.SpreadWithProbabilities{
-								Spread:        spread,
-								Probabilities: probabilities,
-							}
-							mu.Lock()
-							spreadsWithProb = append(spreadsWithProb, spreadWithProb)
-							mu.Unlock()
+			fmt.Printf("Analyzing %s spreads for expiration date: %s (DTE: %d)\n", spreadType, exp_date, daysToExpiration)
+
+			for i := 0; i < len(options)-1; i++ {
+				for j := i + 1; j < len(options); j++ {
+					var spread models.OptionSpread
+					if spreadType == "Bull Put" {
+						if options[i].Strike > options[j].Strike {
+							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history)
+						} else {
+							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history)
 						}
+					} else if spreadType == "Bear Call" {
+						if options[i].Strike < options[j].Strike {
+							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history)
+						} else {
+							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history)
+						}
+					} else {
+						continue
+					}
+
+					returnOnRisk := calculateReturnOnRisk(spread)
+					fmt.Printf("%s Spread: %+v, Return on Risk: %.4f\n", spreadType, spread, returnOnRisk)
+					if returnOnRisk >= minReturnOnRisk {
+						probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0].Probabilities
+						spreadWithProb := models.SpreadWithProbabilities{
+							Spread:        spread,
+							Probabilities: probabilities,
+						}
+						mu.Lock()
+						spreadsWithProb = append(spreadsWithProb, spreadWithProb)
+						mu.Unlock()
 					}
 					progress <- 1
 				}
 			}
-		}(expiration)
+		}(exp_date, expiration)
 	}
 
 	wg.Wait()
 	close(progress)
 
-	fmt.Printf("\nIdentified %d Bull Put Spreads meeting minimum return on risk\n", len(spreadsWithProb))
+	fmt.Printf("\nIdentified %d %s Spreads meeting minimum return on risk\n", len(spreadsWithProb), spreadType)
 	return spreadsWithProb
 }
 
+func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put")
+}
+
 func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
-	var spreadsWithProb []models.SpreadWithProbabilities
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	totalTasks := countTotalTasks(chain, "call")
-	progress := make(chan int, totalTasks)
-
-	go printProgress("Bear Call Spreads", progress, totalTasks)
-
-	for _, expiration := range chain {
-		wg.Add(1)
-		go func(expiration *tradier.OptionChain) {
-			defer wg.Done()
-			calls := filterCallOptions(expiration.Options.Option)
-
-			expirationDate, err := time.Parse("2006-01-02", expiration.ExpirationDate)
-			if err != nil {
-				fmt.Printf("Error parsing expiration date: %v\n", err)
-				return
-			}
-			daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
-
-			for i := 0; i < len(calls)-1; i++ {
-				for j := i + 1; j < len(calls); j++ {
-					if calls[i].Strike < calls[j].Strike {
-						spread := createOptionSpread(calls[i], calls[j], "Bear Call", underlyingPrice, riskFreeRate, history)
-						returnOnRisk := calculateReturnOnRisk(spread)
-						if returnOnRisk >= minReturnOnRisk {
-							probabilities := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0].Probabilities
-							spreadWithProb := models.SpreadWithProbabilities{
-								Spread:        spread,
-								Probabilities: probabilities,
-							}
-							mu.Lock()
-							spreadsWithProb = append(spreadsWithProb, spreadWithProb)
-							mu.Unlock()
-						}
-					}
-					progress <- 1
-				}
-			}
-		}(expiration)
-	}
-
-	wg.Wait()
-	close(progress)
-
-	fmt.Printf("\nIdentified %d Bear Call Spreads meeting minimum return on risk\n", len(spreadsWithProb))
-	return spreadsWithProb
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call")
 }

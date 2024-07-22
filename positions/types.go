@@ -1,4 +1,3 @@
-// positions/types.go
 package positions
 
 import "github.com/bcdannyboy/dquant/tradier"

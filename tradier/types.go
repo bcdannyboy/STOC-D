@@ -77,8 +77,8 @@ type Option struct {
 }
 
 type OptionChain struct {
-	Options        OptionList
-	ExpirationDate string
+	Options        OptionList `json:"options"`
+	ExpirationDate string     `json:"expiration_date"`
 }
 
 type OptionList struct {
