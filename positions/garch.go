@@ -24,7 +24,7 @@ func (g GARCH11) LogLikelihood(returns []float64) float64 {
 }
 
 // EstimateGARCH11 estimates GARCH(1,1) parameters using MCMC and BFGS
-func EstimateGARCH11(returns []float64) GARCH11 {
+func EstimateGARCH11(returns []float64) (GARCH11, error) {
 	// Initial guess
 	initialGuess := GARCH11{Omega: 0.000001, Alpha: 0.1, Beta: 0.8}
 
@@ -81,11 +81,12 @@ func EstimateGARCH11(returns []float64) GARCH11 {
 
 	result, err := optimize.Minimize(problem, []float64{avgParams.Omega, avgParams.Alpha, avgParams.Beta}, nil, &optimize.NelderMead{})
 	if err != nil {
+		// If Nelder-Mead fails, return the average parameters from MCMC
 		fmt.Println("Nelder-Mead optimization failed:", err)
-		return avgParams
+		return avgParams, nil
 	}
 
-	return GARCH11{Omega: result.X[0], Alpha: result.X[1], Beta: result.X[2]}
+	return GARCH11{Omega: result.X[0], Alpha: result.X[1], Beta: result.X[2]}, nil
 }
 
 // ConditionalVolatility calculates the conditional volatility using GARCH(1,1)
@@ -114,7 +115,16 @@ func CalculateReturns(history tradier.QuoteHistory) []float64 {
 // CalculateGARCHVolatility estimates GARCH parameters, calculates volatility, and computes Greeks
 func CalculateGARCHVolatility(history tradier.QuoteHistory, option tradier.Option, underlyingPrice, riskFreeRate float64) GARCHResult {
 	returns := CalculateReturns(history)
-	params := EstimateGARCH11(returns)
+	params, err := EstimateGARCH11(returns)
+	if err != nil {
+		// If GARCH estimation fails, use a default volatility (e.g., historical volatility)
+		defaultVolatility := calculateHistoricalVolatility(returns)
+		return GARCHResult{
+			Params:     params,
+			Volatility: defaultVolatility,
+			Greeks:     calculateGreeks(option, underlyingPrice, riskFreeRate, defaultVolatility),
+		}
+	}
 	volatility := params.ConditionalVolatility(returns)
 	greeks := calculateGreeks(option, underlyingPrice, riskFreeRate, volatility)
 
@@ -123,6 +133,20 @@ func CalculateGARCHVolatility(history tradier.QuoteHistory, option tradier.Optio
 		Volatility: volatility,
 		Greeks:     greeks,
 	}
+}
+
+func calculateHistoricalVolatility(returns []float64) float64 {
+	var sum, sumSquared float64
+	n := float64(len(returns))
+
+	for _, r := range returns {
+		sum += r
+		sumSquared += r * r
+	}
+
+	mean := sum / n
+	variance := (sumSquared/n - mean*mean) * (n / (n - 1))
+	return math.Sqrt(variance * 252) // Annualized
 }
 
 // calculateGreeks computes the option Greeks using the Black-Scholes-Merton model

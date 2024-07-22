@@ -23,9 +23,9 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	Symbol := "EBS"
+	Symbol := "SLB"
 	minDTE := 5
-	maxDTE := 45
+	maxDTE := 15
 	rfr := 0.0416
 	indicator := 1
 	minRoR := 0.1

@@ -2,6 +2,7 @@ package positions
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/bcdannyboy/dquant/tradier"
@@ -37,4 +38,11 @@ func printProgress(spreadType string, progress <-chan int, total int) {
 			spreadType, percentage, elapsed.Round(time.Second), remaining.Round(time.Second))
 	}
 	fmt.Println() // Print a newline when done
+}
+
+func sanitizeFloat(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
 }

@@ -47,7 +47,7 @@ func CalculateOptionMetrics(option *tradier.Option, underlyingPrice, riskFreeRat
 
 	// Calculate Shadow Gammas and Skew Gamma
 	shadowUpGamma, shadowDownGamma := calculateShadowGamma(option, underlyingPrice, riskFreeRate, impliedVol)
-	skewGamma := calculateSkewGamma(option, underlyingPrice, riskFreeRate, impliedVol)
+	skewGamma := calculateBSMSkewGamma(option, underlyingPrice, riskFreeRate, impliedVol)
 
 	return BSMResult{
 		Price:             price,
@@ -155,7 +155,7 @@ func calculateShadowGamma(option *tradier.Option, S, r, sigma float64) (float64,
 	return shadowUpGamma, shadowDownGamma
 }
 
-func calculateSkewGamma(option *tradier.Option, S, r, sigma float64) float64 {
+func calculateBSMSkewGamma(option *tradier.Option, S, r, sigma float64) float64 {
 	T := calculateTimeToMaturity(option.ExpirationDate)
 	isCall := option.OptionType == "call"
 

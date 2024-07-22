@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	numSimulations = 2000
+	numSimulations = 1000
 	timeSteps      = 252 // Assuming 252 trading days in a year
 )
 

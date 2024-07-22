@@ -13,30 +13,51 @@ import (
 )
 
 func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
-	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate, history)
-	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate, history)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	var shortLeg, longLeg models.SpreadLeg
+	go func() {
+		defer wg.Done()
+		shortLeg = createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate, history)
+	}()
+	go func() {
+		defer wg.Done()
+		longLeg = createSpreadLeg(longOpt, underlyingPrice, riskFreeRate, history)
+	}()
+
+	wg.Wait()
 
 	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
 
-	// Calculate intrinsic value correctly
 	var intrinsicValue float64
 	if spreadType == "Bull Put" {
-		if underlyingPrice < shortLeg.Option.Strike {
-			intrinsicValue = shortLeg.Option.Strike - longLeg.Option.Strike
-		} else {
-			intrinsicValue = 0
-		}
-	} else { // Bear Call
-		if underlyingPrice > shortLeg.Option.Strike {
-			intrinsicValue = longLeg.Option.Strike - shortLeg.Option.Strike
-		} else {
-			intrinsicValue = 0
-		}
+		intrinsicValue = math.Max(0, shortLeg.Option.Strike-longLeg.Option.Strike-(underlyingPrice-longLeg.Option.Strike))
+	} else {
+		intrinsicValue = math.Max(0, longLeg.Option.Strike-shortLeg.Option.Strike-(longLeg.Option.Strike-underlyingPrice))
 	}
 
 	extrinsicValue := spreadCredit - intrinsicValue
 
-	// Use only the short leg's IV
+	wg.Add(3)
+	var shadowUpGamma, shadowDownGamma, skewGamma float64
+	go func() {
+		defer wg.Done()
+		shadowUpGamma, shadowDownGamma = calculateShadowGammas(shortOpt, longOpt, underlyingPrice, riskFreeRate, shortLeg.BSMResult.ImpliedVolatility)
+	}()
+	go func() {
+		defer wg.Done()
+		skewGamma = calculateSkewGamma(shortOpt, longOpt, underlyingPrice, riskFreeRate, shortLeg.BSMResult.ImpliedVolatility)
+	}()
+
+	var spreadBSMPrice float64
+	go func() {
+		defer wg.Done()
+		spreadBSMPrice = shortLeg.BSMResult.Price - longLeg.BSMResult.Price
+	}()
+
+	wg.Wait()
+
 	shortLegIV := math.Max(shortLeg.Option.Greeks.MidIv, 0)
 
 	spreadImpliedVol := models.SpreadImpliedVol{
@@ -50,21 +71,42 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, spreadType string, und
 		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
 	}
 
+	greeks := calculateSpreadGreeks(shortLeg, longLeg)
+	greeks.ShadowUpGamma = shadowUpGamma
+	greeks.ShadowDownGamma = shadowDownGamma
+	greeks.SkewGamma = skewGamma
+
 	return models.OptionSpread{
 		ShortLeg:       shortLeg,
 		LongLeg:        longLeg,
 		SpreadType:     spreadType,
 		SpreadCredit:   spreadCredit,
+		SpreadBSMPrice: spreadBSMPrice,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
 		ImpliedVol:     spreadImpliedVol,
-		Greeks:         calculateSpreadGreeks(shortLeg, longLeg),
+		Greeks:         greeks,
 	}
 }
 
 func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory) models.SpreadLeg {
-	bsmResult := CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
-	garchResult := CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	var bsmResult BSMResult
+	var garchResult GARCHResult
+
+	go func() {
+		defer wg.Done()
+		bsmResult = CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
+	}()
+
+	go func() {
+		defer wg.Done()
+		garchResult = CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
+	}()
+
+	wg.Wait()
 
 	intrinsicValue := calculateIntrinsicValue(option, underlyingPrice)
 	extrinsicValue := math.Max(0, bsmResult.Price-intrinsicValue)
@@ -115,28 +157,6 @@ func sanitizeGARCHResult(result GARCHResult) models.GARCHResult {
 	}
 }
 
-func sanitizeFloat(f float64) float64 {
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return 0
-	}
-	return f
-}
-
-func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult {
-	return models.BSMResult{
-		Price:             sanitizeFloat(shortLeg.BSMResult.Price - longLeg.BSMResult.Price),
-		ImpliedVolatility: sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
-		Delta:             sanitizeFloat(shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta),
-		Gamma:             sanitizeFloat(shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma),
-		Theta:             sanitizeFloat(shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta),
-		Vega:              sanitizeFloat(shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega),
-		Rho:               sanitizeFloat(shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho),
-		ShadowUpGamma:     sanitizeFloat(shortLeg.BSMResult.ShadowUpGamma - longLeg.BSMResult.ShadowUpGamma),
-		ShadowDownGamma:   sanitizeFloat(shortLeg.BSMResult.ShadowDownGamma - longLeg.BSMResult.ShadowDownGamma),
-		SkewGamma:         sanitizeFloat(shortLeg.BSMResult.SkewGamma - longLeg.BSMResult.SkewGamma),
-	}
-}
-
 func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64) models.SpreadImpliedVol {
 	return models.SpreadImpliedVol{
 		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
@@ -179,8 +199,8 @@ func filterCallOptions(options []tradier.Option) []tradier.Option {
 
 func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
 	var spreadsWithProb []models.SpreadWithProbabilities
-	var wg sync.WaitGroup
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 
 	if len(chain) == 0 {
 		fmt.Printf("Warning: Option chain is empty for %s spreads\n", spreadType)
@@ -189,22 +209,23 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
 
-	// Calculate Garman-Klass volatility for the underlying
-	gkResult := CalculateGarmanKlassVolatility(history)
-	gkVolatility := gkResult.Volatility
-
-	// Calculate Parkinson's volatility for the underlying
+	gkVolatility := CalculateGarmanKlassVolatility(history).Volatility
 	parkinsonVolatility := CalculateParkinsonsVolatility(history)
 
-	totalTasks := countTotalTasks(chain, strings.ToLower(spreadType[:3])) // "put" for Bull Put, "cal" for Bear Call
+	totalTasks := countTotalTasks(chain, strings.ToLower(spreadType[:3]))
 	progress := make(chan int, totalTasks)
 
 	go printProgress(fmt.Sprintf("%s Spreads", spreadType), progress, totalTasks)
+
+	semaphore := make(chan struct{}, 10) // Limit concurrent goroutines to 10
 
 	for exp_date, expiration := range chain {
 		wg.Add(1)
 		go func(exp_date string, expiration *tradier.OptionChain) {
 			defer wg.Done()
+			defer func() { <-semaphore }()
+			semaphore <- struct{}{}
+
 			var options []tradier.Option
 			if spreadType == "Bull Put" {
 				options = filterPutOptions(expiration.Options.Option)
@@ -226,37 +247,42 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 			fmt.Printf("Analyzing %s spreads for expiration date: %s (DTE: %d)\n", spreadType, exp_date, daysToExpiration)
 
+			spreadSemaphore := make(chan struct{}, 5) // Limit spread calculations to 5 at a time
 			for i := 0; i < len(options)-1; i++ {
 				for j := i + 1; j < len(options); j++ {
-					var spread models.OptionSpread
-					if spreadType == "Bull Put" {
-						if options[i].Strike > options[j].Strike {
-							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+					spreadSemaphore <- struct{}{}
+					go func(i, j int) {
+						defer func() { <-spreadSemaphore }()
+						var spread models.OptionSpread
+						if spreadType == "Bull Put" {
+							if options[i].Strike > options[j].Strike {
+								spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+							} else {
+								spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+							}
+						} else if spreadType == "Bear Call" {
+							if options[i].Strike < options[j].Strike {
+								spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+							} else {
+								spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+							}
 						} else {
-							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
+							return
 						}
-					} else if spreadType == "Bear Call" {
-						if options[i].Strike < options[j].Strike {
-							spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-						} else {
-							spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-						}
-					} else {
-						continue
-					}
 
-					returnOnRisk := calculateReturnOnRisk(spread)
-					if returnOnRisk >= minReturnOnRisk {
-						probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
-						spreadWithProb := models.SpreadWithProbabilities{
-							Spread:      spread,
-							Probability: probabilityResult,
+						returnOnRisk := calculateReturnOnRisk(spread)
+						if returnOnRisk >= minReturnOnRisk {
+							probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
+							spreadWithProb := models.SpreadWithProbabilities{
+								Spread:      spread,
+								Probability: probabilityResult,
+							}
+							mu.Lock()
+							spreadsWithProb = append(spreadsWithProb, spreadWithProb)
+							mu.Unlock()
 						}
-						mu.Lock()
-						spreadsWithProb = append(spreadsWithProb, spreadWithProb)
-						mu.Unlock()
-					}
-					progress <- 1
+						progress <- 1
+					}(i, j)
 				}
 			}
 		}(exp_date, expiration)

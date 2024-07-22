@@ -3,6 +3,7 @@ package positions
 import (
 	"math"
 
+	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
@@ -60,4 +61,30 @@ func calculateVega(option tradier.Option, underlyingPrice, riskFreeRate, volatil
 	d1 := (math.Log(S/K) + (r+0.5*sigma*sigma)*T) / (sigma * math.Sqrt(T))
 
 	return S * normalPDF(d1) * math.Sqrt(T)
+}
+
+func calculateShadowGammas(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, volatility float64) (float64, float64) {
+	shortUpGamma, shortDownGamma := ShadowGamma(shortOpt, underlyingPrice, riskFreeRate, volatility, 0.01, 0.05)
+	longUpGamma, longDownGamma := ShadowGamma(longOpt, underlyingPrice, riskFreeRate, volatility, 0.01, 0.05)
+
+	return shortUpGamma - longUpGamma, shortDownGamma - longDownGamma
+}
+
+func calculateSkewGamma(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, volatility float64) float64 {
+	shortSkewGamma := SkewGamma(shortOpt, underlyingPrice, riskFreeRate, volatility, 0.01)
+	longSkewGamma := SkewGamma(longOpt, underlyingPrice, riskFreeRate, volatility, 0.01)
+
+	return shortSkewGamma - longSkewGamma
+}
+
+func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult {
+	return models.BSMResult{
+		Price:             sanitizeFloat(shortLeg.BSMResult.Price - longLeg.BSMResult.Price),
+		ImpliedVolatility: sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
+		Delta:             sanitizeFloat(shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta),
+		Gamma:             sanitizeFloat(shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma),
+		Theta:             sanitizeFloat(shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta),
+		Vega:              sanitizeFloat(shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega),
+		Rho:               sanitizeFloat(shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho),
+	}
 }
