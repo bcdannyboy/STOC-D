@@ -3,6 +3,7 @@ package positions
 import (
 	"fmt"
 	"math"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -172,9 +173,13 @@ func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64)
 func calculateReturnOnRisk(spread models.OptionSpread) float64 {
 	maxRisk := math.Abs(spread.ShortLeg.Option.Strike-spread.LongLeg.Option.Strike) - spread.SpreadCredit
 	if maxRisk <= 0 {
-		return 0 // Avoid division by zero or negative risk
+		fmt.Printf("Invalid maxRisk: %.2f for spread: Short Strike %.2f, Long Strike %.2f, Credit %.2f\n",
+			maxRisk, spread.ShortLeg.Option.Strike, spread.LongLeg.Option.Strike, spread.SpreadCredit)
+		return 0
 	}
-	return spread.SpreadCredit / maxRisk
+	returnOnRisk := spread.SpreadCredit / maxRisk
+	fmt.Printf("Spread RoR: %.4f, Credit: %.2f, MaxRisk: %.2f\n", returnOnRisk, spread.SpreadCredit, maxRisk)
+	return returnOnRisk
 }
 
 func filterPutOptions(options []tradier.Option) []tradier.Option {
@@ -217,82 +222,111 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	go printProgress(fmt.Sprintf("%s Spreads", spreadType), progress, totalTasks)
 
-	semaphore := make(chan struct{}, 10) // Limit concurrent goroutines to 10
+	numWorkers := runtime.NumCPU() * 2
+	jobs := make(chan job, totalTasks)
+	results := make(chan models.SpreadWithProbabilities, totalTasks)
 
-	for exp_date, expiration := range chain {
-		wg.Add(1)
-		go func(exp_date string, expiration *tradier.OptionChain) {
-			defer wg.Done()
-			defer func() { <-semaphore }()
-			semaphore <- struct{}{}
+	totalSpreads := 0
+	qualifyingSpreads := 0
 
-			var options []tradier.Option
-			if spreadType == "Bull Put" {
-				options = filterPutOptions(expiration.Options.Option)
-			} else {
-				options = filterCallOptions(expiration.Options.Option)
-			}
-
-			if len(options) == 0 {
-				fmt.Printf("Warning: No %s options found for expiration date %s\n", strings.ToLower(spreadType[:3]), exp_date)
-				return
-			}
-
-			expirationDate, err := time.Parse("2006-01-02", exp_date)
-			if err != nil {
-				fmt.Printf("Error parsing expiration date %s: %v\n", exp_date, err)
-				return
-			}
-			daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
-
-			fmt.Printf("Analyzing %s spreads for expiration date: %s (DTE: %d)\n", spreadType, exp_date, daysToExpiration)
-
-			spreadSemaphore := make(chan struct{}, 5) // Limit spread calculations to 5 at a time
-			for i := 0; i < len(options)-1; i++ {
-				for j := i + 1; j < len(options); j++ {
-					spreadSemaphore <- struct{}{}
-					go func(i, j int) {
-						defer func() { <-spreadSemaphore }()
-						var spread models.OptionSpread
-						if spreadType == "Bull Put" {
-							if options[i].Strike > options[j].Strike {
-								spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-							} else {
-								spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-							}
-						} else if spreadType == "Bear Call" {
-							if options[i].Strike < options[j].Strike {
-								spread = createOptionSpread(options[i], options[j], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-							} else {
-								spread = createOptionSpread(options[j], options[i], spreadType, underlyingPrice, riskFreeRate, history, gkVolatility, parkinsonVolatility)
-							}
-						} else {
-							return
-						}
-
-						returnOnRisk := calculateReturnOnRisk(spread)
-						if returnOnRisk >= minReturnOnRisk {
-							probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, underlyingPrice, riskFreeRate, daysToExpiration)[0]
-							spreadWithProb := models.SpreadWithProbabilities{
-								Spread:      spread,
-								Probability: probabilityResult,
-							}
-							mu.Lock()
-							spreadsWithProb = append(spreadsWithProb, spreadWithProb)
-							mu.Unlock()
-						}
-						progress <- 1
-					}(i, j)
+	worker := func(jobs <-chan job, results chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, progress chan<- int) {
+		for j := range jobs {
+			wg.Add(1)
+			totalSpreads++
+			spread := createOptionSpread(j.option1, j.option2, j.spreadType, j.underlyingPrice, j.riskFreeRate, j.history, j.gkVolatility, j.parkinsonVolatility)
+			returnOnRisk := calculateReturnOnRisk(spread)
+			if returnOnRisk >= j.minReturnOnRisk {
+				qualifyingSpreads++
+				probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)[0]
+				results <- models.SpreadWithProbabilities{
+					Spread:      spread,
+					Probability: probabilityResult,
 				}
 			}
-		}(exp_date, expiration)
+			progress <- 1
+			wg.Done()
+		}
 	}
 
+	for w := 0; w < numWorkers; w++ {
+		go worker(jobs, results, &wg, progress)
+	}
+
+	for exp_date, expiration := range chain {
+		options := filterOptions(expiration.Options.Option, spreadType)
+		if len(options) == 0 {
+			fmt.Printf("Warning: No %s options found for expiration date %s\n", strings.ToLower(spreadType[:3]), exp_date)
+			continue
+		}
+
+		expirationDate, err := time.Parse("2006-01-02", exp_date)
+		if err != nil {
+			fmt.Printf("Error parsing expiration date %s: %v\n", exp_date, err)
+			continue
+		}
+		daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
+
+		for i := 0; i < len(options)-1; i++ {
+			for j := i + 1; j < len(options); j++ {
+				jobs <- job{
+					spreadType:          spreadType,
+					option1:             options[i],
+					option2:             options[j],
+					underlyingPrice:     underlyingPrice,
+					riskFreeRate:        riskFreeRate,
+					history:             history,
+					gkVolatility:        gkVolatility,
+					parkinsonVolatility: parkinsonVolatility,
+					minReturnOnRisk:     minReturnOnRisk,
+					daysToExpiration:    daysToExpiration,
+				}
+			}
+		}
+	}
+
+	close(jobs)
+
+	go func() {
+		for spread := range results {
+			mu.Lock()
+			spreadsWithProb = append(spreadsWithProb, spread)
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
+	close(results)
 	close(progress)
 
+	fmt.Printf("Total spreads processed: %d\n", totalSpreads)
+	fmt.Printf("Qualifying spreads: %d\n", qualifyingSpreads)
 	fmt.Printf("\nIdentified %d %s Spreads meeting minimum return on risk\n", len(spreadsWithProb), spreadType)
+
 	return spreadsWithProb
+}
+
+func worker(jobs <-chan job, results chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, progress chan<- int) {
+	for j := range jobs {
+		wg.Add(1)
+		spread := createOptionSpread(j.option1, j.option2, j.spreadType, j.underlyingPrice, j.riskFreeRate, j.history, j.gkVolatility, j.parkinsonVolatility)
+		returnOnRisk := calculateReturnOnRisk(spread)
+		if returnOnRisk >= j.minReturnOnRisk {
+			probabilityResult := probability.MonteCarloSimulationBatch([]models.OptionSpread{spread}, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)[0]
+			results <- models.SpreadWithProbabilities{
+				Spread:      spread,
+				Probability: probabilityResult,
+			}
+		}
+		progress <- 1
+		wg.Done()
+	}
+}
+
+func filterOptions(options []tradier.Option, spreadType string) []tradier.Option {
+	if spreadType == "Bull Put" {
+		return filterPutOptions(options)
+	}
+	return filterCallOptions(options)
 }
 
 func FilterSpreadsByProbability(spreads []models.SpreadWithProbabilities, minProbability float64) []models.SpreadWithProbabilities {

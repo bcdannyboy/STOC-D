@@ -2,6 +2,18 @@ package positions
 
 import "github.com/bcdannyboy/dquant/tradier"
 
+type job struct {
+	spreadType          string
+	option1, option2    tradier.Option
+	underlyingPrice     float64
+	riskFreeRate        float64
+	history             tradier.QuoteHistory
+	gkVolatility        float64
+	parkinsonVolatility float64
+	minReturnOnRisk     float64
+	daysToExpiration    int
+}
+
 type BSMResult struct {
 	Price             float64
 	ImpliedVolatility float64

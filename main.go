@@ -62,6 +62,10 @@ func main() {
 
 	last_price := quotes.History.Day[len(quotes.History.Day)-1].Close
 
+	fmt.Printf("Last price: %.2f\n", last_price)
+	fmt.Printf("Risk-free rate: %.4f\n", rfr)
+	fmt.Printf("Minimum Return on Risk: %.2f\n", minRoR)
+
 	spreads := []models.SpreadWithProbabilities{}
 	if indicator > 0 {
 		fmt.Printf("Identifying Bull Put Spreads for %s\n", Symbol)
@@ -73,12 +77,23 @@ func main() {
 		spreads = BearCalls
 	}
 
-	sort.Slice(spreads, func(i, j int) bool {
-		return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
-	})
+	fmt.Printf("Number of identified spreads: %d\n", len(spreads))
+	if len(spreads) == 0 {
+		fmt.Println("No spreads identified. Check minRoR and other parameters.")
+		return
+	}
 
-	if len(spreads) > 10 {
-		spreads = spreads[:10]
+	if len(spreads) > 0 {
+		sort.Slice(spreads, func(i, j int) bool {
+			return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
+		})
+
+		if len(spreads) > 10 {
+			spreads = spreads[:10]
+		}
+	} else {
+		fmt.Println("No spreads to sort or slice.")
+		return
 	}
 
 	jspreads, err := json.Marshal(spreads)
@@ -93,4 +108,6 @@ func main() {
 		fmt.Printf("Error writing to file %s: %s\n", f, err.Error())
 		return
 	}
+
+	fmt.Printf("Successfully wrote %d spreads to %s\n", len(spreads), f)
 }
