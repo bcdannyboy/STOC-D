@@ -52,7 +52,6 @@ func monteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{"BidIV", spread.ImpliedVol.BidIV},
 		{"AskIV", spread.ImpliedVol.AskIV},
 		{"MidIV", spread.ImpliedVol.MidIV},
-		{"GARCHIV", spread.ImpliedVol.GARCHIV},
 		{"BSMIV", spread.ImpliedVol.BSMIV},
 		{"GarmanKlassIV", spread.ImpliedVol.GarmanKlassIV},
 		{"ParkinsonVolatility", spread.ImpliedVol.ParkinsonVolatility},

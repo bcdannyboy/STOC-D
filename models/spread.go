@@ -7,7 +7,6 @@ import (
 type SpreadLeg struct {
 	Option            tradier.Option
 	BSMResult         BSMResult
-	GARCHResult       GARCHResult
 	GarmanKlassResult GarmanKlassResult
 	BidImpliedVol     float64
 	AskImpliedVol     float64
@@ -41,18 +40,6 @@ type BSMResult struct {
 	SkewGamma         float64
 }
 
-type GARCHResult struct {
-	Params     GARCH11
-	Volatility float64
-	Greeks     BSMResult
-}
-
-type GARCH11 struct {
-	Omega float64
-	Alpha float64
-	Beta  float64
-}
-
 type GarmanKlassResult struct {
 	Period     string
 	Volatility float64
@@ -62,7 +49,6 @@ type SpreadImpliedVol struct {
 	BidIV               float64
 	AskIV               float64
 	MidIV               float64
-	GARCHIV             float64
 	BSMIV               float64
 	GarmanKlassIV       float64
 	ParkinsonVolatility float64
@@ -92,6 +78,6 @@ func IsProfitable(spread OptionSpread, finalPrice float64) bool {
 
 func CalculateAverageVolatility(spread OptionSpread) float64 {
 	return (spread.ImpliedVol.BidIV + spread.ImpliedVol.AskIV + spread.ImpliedVol.MidIV +
-		spread.ImpliedVol.GARCHIV + spread.ImpliedVol.BSMIV +
+		spread.ImpliedVol.BSMIV +
 		spread.ImpliedVol.ShortLegBSMIV + spread.ImpliedVol.GarmanKlassIV) / 7
 }
