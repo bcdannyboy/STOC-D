@@ -2,12 +2,37 @@ package positions
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"time"
 
 	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/shirou/gopsutil/cpu"
 )
+
+func monitorCPUUsage() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		var cpuUsage float64
+		percentage, err := cpu.Percent(time.Second, false)
+		if err == nil && len(percentage) > 0 {
+			cpuUsage = percentage[0]
+		}
+		log.Printf("CPU Usage: %.2f%%", cpuUsage)
+	}
+}
+
+func estimateTotalJobs(chain map[string]*tradier.OptionChain) int64 {
+	total := int64(0)
+	for _, expiration := range chain {
+		n := int64(len(expiration.Options.Option))
+		total += (n * (n - 1)) / 2
+	}
+	return total
+}
 
 func calculateSingleOptionIntrinsicValue(option tradier.Option, underlyingPrice float64) float64 {
 	if option.OptionType == "call" {

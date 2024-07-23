@@ -79,16 +79,17 @@ func calculateSkewGamma(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 
 func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult {
 	return models.BSMResult{
-		Price:             shortLeg.BSMResult.Price - longLeg.BSMResult.Price,
-		ImpliedVolatility: shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility,
-		Delta:             shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta,
-		Gamma:             shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma,
-		Theta:             shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta,
-		Vega:              shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega,
-		Rho:               shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho,
-		ShadowUpGamma:     shortLeg.BSMResult.ShadowUpGamma - longLeg.BSMResult.ShadowUpGamma,
-		ShadowDownGamma:   shortLeg.BSMResult.ShadowDownGamma - longLeg.BSMResult.ShadowDownGamma,
-		SkewGamma:         shortLeg.BSMResult.SkewGamma - longLeg.BSMResult.SkewGamma,
+		Price: shortLeg.BSMResult.Price - longLeg.BSMResult.Price,
+		ImpliedVolatility: (shortLeg.BSMResult.Vega*shortLeg.BSMResult.ImpliedVolatility + longLeg.BSMResult.Vega*longLeg.BSMResult.ImpliedVolatility) /
+			(shortLeg.BSMResult.Vega + longLeg.BSMResult.Vega),
+		Delta:           shortLeg.BSMResult.Delta - longLeg.BSMResult.Delta,
+		Gamma:           shortLeg.BSMResult.Gamma - longLeg.BSMResult.Gamma,
+		Theta:           shortLeg.BSMResult.Theta - longLeg.BSMResult.Theta,
+		Vega:            shortLeg.BSMResult.Vega - longLeg.BSMResult.Vega,
+		Rho:             shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho,
+		ShadowUpGamma:   shortLeg.BSMResult.ShadowUpGamma - longLeg.BSMResult.ShadowUpGamma,
+		ShadowDownGamma: shortLeg.BSMResult.ShadowDownGamma - longLeg.BSMResult.ShadowDownGamma,
+		SkewGamma:       shortLeg.BSMResult.SkewGamma - longLeg.BSMResult.SkewGamma,
 	}
 }
 

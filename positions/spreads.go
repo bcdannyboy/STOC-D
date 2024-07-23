@@ -2,170 +2,21 @@ package positions
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"runtime"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/probability"
 	"github.com/bcdannyboy/dquant/tradier"
-	"github.com/shirou/gopsutil/cpu"
-	mpb "github.com/vbauerster/mpb/v7"
-	"github.com/vbauerster/mpb/v7/decor"
 )
 
 const (
-	jobBatchSize    = 1000
-	resultBatchSize = 1000
+	workerPoolSize = 1000
 )
-
-func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
-	if len(chain) == 0 {
-		fmt.Printf("Warning: Option chain is empty for %s spreads\n", spreadType)
-		return nil
-	}
-
-	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
-
-	gkVolatility := CalculateGarmanKlassVolatility(history).Volatility
-	parkinsonVolatility := CalculateParkinsonsVolatility(history)
-
-	jobs := generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk, currentDate, spreadType)
-	fmt.Printf("Total potential spreads: %d\n", len(jobs))
-
-	numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(numCPU)
-	fmt.Printf("Using %d CPUs\n", numCPU)
-
-	// Create progress bar
-	p := mpb.New(mpb.WithWidth(64))
-	bar := p.AddBar(int64(len(jobs)),
-		mpb.PrependDecorators(
-			decor.Name("Progress"),
-			decor.Percentage(decor.WCSyncSpace),
-		),
-		mpb.AppendDecorators(
-			decor.CountersNoUnit("(%d / %d)", decor.WCSyncSpace),
-		),
-	)
-
-	// Process jobs
-	spreads := processJobs(jobs, numCPU, bar)
-
-	// Sort spreads by probability
-	sort.Slice(spreads, func(i, j int) bool {
-		return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
-	})
-
-	p.Wait()
-	fmt.Printf("\nProcessing complete. Total time: %v\n", time.Since(currentDate))
-	fmt.Printf("Identified %d %s Spreads meeting minimum return on risk\n", len(spreads), spreadType)
-
-	return spreads
-}
-
-func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk float64, currentDate time.Time, spreadType string) []job {
-	var jobs []job
-
-	for exp_date, expiration := range chain {
-		options := filterOptions(expiration.Options.Option, spreadType)
-		if len(options) == 0 {
-			continue
-		}
-
-		expirationDate, err := time.Parse("2006-01-02", exp_date)
-		if err != nil {
-			fmt.Printf("Error parsing expiration date %s: %v\n", exp_date, err)
-			continue
-		}
-		daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
-
-		for i := 0; i < len(options)-1; i++ {
-			for j := i + 1; j < len(options); j++ {
-				var option1, option2 tradier.Option
-				if spreadType == "Bull Put" {
-					if options[i].Strike > options[j].Strike {
-						option1, option2 = options[i], options[j]
-					} else {
-						option1, option2 = options[j], options[i]
-					}
-				} else { // Bear Call
-					if options[i].Strike < options[j].Strike {
-						option1, option2 = options[i], options[j]
-					} else {
-						option1, option2 = options[j], options[i]
-					}
-				}
-				jobs = append(jobs, job{
-					option1:             option1,
-					option2:             option2,
-					underlyingPrice:     underlyingPrice,
-					riskFreeRate:        riskFreeRate,
-					gkVolatility:        gkVolatility,
-					parkinsonVolatility: parkinsonVolatility,
-					minReturnOnRisk:     minReturnOnRisk,
-					daysToExpiration:    daysToExpiration,
-				})
-			}
-		}
-	}
-
-	return jobs
-}
-
-func processJobs(jobs []job, numWorkers int, bar *mpb.Bar) []models.SpreadWithProbabilities {
-	var wg sync.WaitGroup
-	jobChan := make(chan job, jobBatchSize)
-	resultChan := make(chan models.SpreadWithProbabilities, resultBatchSize)
-	var processed int64
-
-	// Start workers
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, &processed, bar)
-	}
-
-	// Feed jobs to workers
-	go func() {
-		for _, j := range jobs {
-			jobChan <- j
-		}
-		close(jobChan)
-	}()
-
-	// Collect results
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	var spreads []models.SpreadWithProbabilities
-	for spread := range resultChan {
-		spreads = append(spreads, spread)
-	}
-
-	return spreads
-}
-
-func worker(jobs <-chan job, results chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, processed *int64, bar *mpb.Bar) {
-	defer wg.Done()
-	for j := range jobs {
-		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, j.gkVolatility, j.parkinsonVolatility)
-		returnOnRisk := calculateReturnOnRisk(spread)
-		if returnOnRisk >= j.minReturnOnRisk {
-			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)
-			results <- models.SpreadWithProbabilities{
-				Spread:      spread,
-				Probability: probabilityResult,
-			}
-		}
-		atomic.AddInt64(processed, 1)
-		bar.Increment()
-	}
-}
 
 func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
 	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate)
@@ -195,21 +46,21 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 	}
 }
 
-func determineSpreadType(shortOpt, longOpt tradier.Option) string {
-	if shortOpt.OptionType == "put" && longOpt.OptionType == "put" {
-		return "Bull Put"
-	} else if shortOpt.OptionType == "call" && longOpt.OptionType == "call" {
-		return "Bear Call"
-	}
-	return "Unknown"
-}
-
 func calculateSpreadImpliedVol(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
+	combinedBidIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.BidIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.BidIv) /
+		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
+	combinedAskIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.AskIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.AskIv) /
+		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
+	combinedMidIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.MidIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.MidIv) /
+		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
+	combinedBSMIV := (shortLeg.BSMResult.Vega*shortLeg.BSMResult.ImpliedVolatility + longLeg.BSMResult.Vega*longLeg.BSMResult.ImpliedVolatility) /
+		(shortLeg.BSMResult.Vega + longLeg.BSMResult.Vega)
+
 	return models.SpreadImpliedVol{
-		BidIV:               math.Max(shortLeg.Option.Greeks.BidIv, 0) - math.Max(longLeg.Option.Greeks.BidIv, 0),
-		AskIV:               math.Max(shortLeg.Option.Greeks.AskIv, 0) - math.Max(longLeg.Option.Greeks.AskIv, 0),
-		MidIV:               math.Max(shortLeg.Option.Greeks.MidIv, 0) - math.Max(longLeg.Option.Greeks.MidIv, 0),
-		BSMIV:               shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility,
+		BidIV:               combinedBidIV,
+		AskIV:               combinedAskIV,
+		MidIV:               combinedMidIV,
+		BSMIV:               combinedBSMIV,
 		GarmanKlassIV:       gkVolatility,
 		ParkinsonVolatility: parkinsonVolatility,
 		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
@@ -224,12 +75,171 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	return models.SpreadLeg{
 		Option:         option,
 		BSMResult:      sanitizeBSMResult(bsmResult),
-		BidImpliedVol:  math.Max(0, option.Greeks.BidIv),
-		AskImpliedVol:  math.Max(0, option.Greeks.AskIv),
-		MidImpliedVol:  math.Max(0, option.Greeks.MidIv),
+		BidImpliedVol:  option.Greeks.BidIv,
+		AskImpliedVol:  option.Greeks.AskIv,
+		MidImpliedVol:  option.Greeks.MidIv,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
 	}
+}
+
+func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
+	startTime := time.Now()
+	log.Printf("IdentifySpreads started at %v", startTime)
+
+	if len(chain) == 0 {
+		fmt.Printf("Warning: Option chain is empty for %s spreads\n", spreadType)
+		return nil
+	}
+
+	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
+
+	gkVolatility := CalculateGarmanKlassVolatility(history).Volatility
+	parkinsonVolatility := CalculateParkinsonsVolatility(history)
+
+	numCPU := runtime.NumCPU()
+	runtime.GOMAXPROCS(numCPU)
+	fmt.Printf("Using %d CPUs\n", numCPU)
+
+	log.Printf("Starting processChainOptimized at %v", time.Now())
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk, currentDate, spreadType)
+	log.Printf("Finished processChainOptimized at %v", time.Now())
+
+	log.Printf("Sorting %d spreads by average probability", len(spreads))
+	sort.Slice(spreads, func(i, j int) bool {
+		return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
+	})
+
+	fmt.Printf("\nProcessing complete. Total time: %v\n", time.Since(currentDate))
+	fmt.Printf("Identified %d %s Spreads meeting minimum return on risk\n", len(spreads), spreadType)
+
+	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
+	return spreads
+}
+
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
+	startTime := time.Now()
+	log.Printf("processChainOptimized started at %v", startTime)
+
+	jobChan := make(chan job, workerPoolSize)
+	resultChan := make(chan models.SpreadWithProbabilities, workerPoolSize)
+	done := make(chan struct{})
+
+	log.Printf("Starting worker pool at %v", time.Now())
+	var wg sync.WaitGroup
+	for i := 0; i < workerPoolSize; i++ {
+		wg.Add(1)
+		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate)
+	}
+
+	log.Printf("Starting job generator at %v", time.Now())
+	go generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk, currentDate, spreadType, jobChan)
+
+	var spreads []models.SpreadWithProbabilities
+	go func() {
+		for spread := range resultChan {
+			spreads = append(spreads, spread)
+		}
+		close(done)
+	}()
+
+	wg.Wait()
+	close(resultChan)
+	<-done
+
+	log.Printf("processChainOptimized finished at %v. Total time: %v", time.Now(), time.Since(startTime))
+	return spreads
+}
+
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate float64) {
+	defer wg.Done()
+	for j := range jobQueue {
+		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, j.gkVolatility, j.parkinsonVolatility)
+		returnOnRisk := calculateReturnOnRisk(spread)
+		if returnOnRisk >= j.minReturnOnRisk {
+			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)
+			select {
+			case resultChan <- models.SpreadWithProbabilities{
+				Spread:      spread,
+				Probability: probabilityResult,
+			}:
+			default:
+				// If the channel is full, log a warning and continue
+				log.Printf("Warning: Result channel is full, skipping a result")
+			}
+		}
+	}
+}
+
+func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk float64, currentDate time.Time, spreadType string, jobQueue chan<- job) {
+	startTime := time.Now()
+	log.Printf("generateJobs started at %v", startTime)
+	defer close(jobQueue)
+
+	jobCount := 0
+	for exp_date, expiration := range chain {
+		options := filterOptions(expiration.Options.Option, spreadType)
+		if len(options) == 0 {
+			continue
+		}
+
+		expirationDate, err := time.Parse("2006-01-02", exp_date)
+		if err != nil {
+			fmt.Printf("Error parsing expiration date %s: %v\n", exp_date, err)
+			continue
+		}
+		daysToExpiration := int(expirationDate.Sub(currentDate).Hours() / 24)
+
+		for i := 0; i < len(options)-1; i++ {
+			for j := i + 1; j < len(options); j++ {
+				var option1, option2 tradier.Option
+				if spreadType == "Bull Put" {
+					if options[i].Strike > options[j].Strike {
+						option1, option2 = options[i], options[j]
+					} else {
+						option1, option2 = options[j], options[i]
+					}
+				} else { // Bear Call
+					if options[i].Strike < options[j].Strike {
+						option1, option2 = options[i], options[j]
+					} else {
+						option1, option2 = options[j], options[i]
+					}
+				}
+
+				select {
+				case jobQueue <- job{
+					option1:             option1,
+					option2:             option2,
+					underlyingPrice:     underlyingPrice,
+					riskFreeRate:        riskFreeRate,
+					gkVolatility:        gkVolatility,
+					parkinsonVolatility: parkinsonVolatility,
+					minReturnOnRisk:     minReturnOnRisk,
+					daysToExpiration:    daysToExpiration,
+				}:
+					jobCount++
+					if jobCount%1000 == 0 {
+						log.Printf("Generated %d jobs at %v", jobCount, time.Now())
+					}
+				default:
+					// If the channel is full, wait a bit and try again
+					time.Sleep(time.Millisecond)
+				}
+			}
+		}
+	}
+
+	log.Printf("generateJobs finished at %v. Total time: %v. Total jobs: %d", time.Now(), time.Since(startTime), jobCount)
+}
+
+func determineSpreadType(shortOpt, longOpt tradier.Option) string {
+	if shortOpt.OptionType == "put" && longOpt.OptionType == "put" {
+		return "Bull Put"
+	} else if shortOpt.OptionType == "call" && longOpt.OptionType == "call" {
+		return "Bear Call"
+	}
+	return "Unknown"
 }
 
 func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
@@ -319,20 +329,6 @@ func filterCallOptions(options []tradier.Option) []tradier.Option {
 		}
 	}
 	return calls
-}
-
-func monitorCPUUsage() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		var cpuUsage float64
-		percentage, err := cpu.Percent(time.Second, false)
-		if err == nil && len(percentage) > 0 {
-			cpuUsage = percentage[0]
-		}
-		fmt.Printf("\nCPU Usage: %.2f%%\n", cpuUsage)
-	}
 }
 
 func calculatePreliminaryRoR(option1, option2 tradier.Option, spreadType string) float64 {
