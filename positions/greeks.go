@@ -88,3 +88,13 @@ func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult 
 		Rho:               sanitizeFloat(shortLeg.BSMResult.Rho - longLeg.BSMResult.Rho),
 	}
 }
+
+// normalCDF calculates the cumulative distribution function of the standard normal distribution
+func normalCDF(x float64) float64 {
+	return 0.5 * (1 + math.Erf(x/math.Sqrt2))
+}
+
+// normalPDF calculates the probability density function of the standard normal distribution
+func normalPDF(x float64) float64 {
+	return math.Exp(-0.5*x*x) / math.Sqrt(2*math.Pi)
+}

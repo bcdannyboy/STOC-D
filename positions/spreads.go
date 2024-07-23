@@ -94,16 +94,10 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	wg.Add(2)
 
 	var bsmResult BSMResult
-	var garchResult GARCHResult
 
 	go func() {
 		defer wg.Done()
 		bsmResult = CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
-	}()
-
-	go func() {
-		defer wg.Done()
-		garchResult = CalculateGARCHVolatility(history, option, underlyingPrice, riskFreeRate)
 	}()
 
 	wg.Wait()
@@ -114,7 +108,6 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 	return models.SpreadLeg{
 		Option:         option,
 		BSMResult:      sanitizeBSMResult(bsmResult),
-		GARCHResult:    sanitizeGARCHResult(garchResult),
 		BidImpliedVol:  math.Max(0, option.Greeks.BidIv),
 		AskImpliedVol:  math.Max(0, option.Greeks.AskIv),
 		MidImpliedVol:  math.Max(0, option.Greeks.MidIv),
@@ -142,18 +135,6 @@ func sanitizeBSMResult(result BSMResult) models.BSMResult {
 		ShadowUpGamma:     sanitizeFloat(result.ShadowUpGamma),
 		ShadowDownGamma:   sanitizeFloat(result.ShadowDownGamma),
 		SkewGamma:         sanitizeFloat(result.SkewGamma),
-	}
-}
-
-func sanitizeGARCHResult(result GARCHResult) models.GARCHResult {
-	return models.GARCHResult{
-		Params: models.GARCH11{
-			Omega: sanitizeFloat(result.Params.Omega),
-			Alpha: sanitizeFloat(result.Params.Alpha),
-			Beta:  sanitizeFloat(result.Params.Beta),
-		},
-		Volatility: sanitizeFloat(result.Volatility),
-		Greeks:     sanitizeBSMResult(result.Greeks),
 	}
 }
 
@@ -227,15 +208,16 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	allSpreads := make([]models.SpreadWithProbabilities, 0, maxPotentialSpreads)
 
-	numWorkers := runtime.NumCPU()
+	numWorkers := runtime.NumCPU() * 20 // Significantly increase the number of workers
 	runtime.GOMAXPROCS(numWorkers)
 	fmt.Printf("Using %d workers\n", numWorkers)
 
 	var wg sync.WaitGroup
-	spreadChan := make(chan models.SpreadWithProbabilities, numWorkers*2)
+	spreadChan := make(chan models.SpreadWithProbabilities, numWorkers*100)
 	errorChan := make(chan error, numWorkers)
 	progressChan := make(chan int, maxPotentialSpreads)
 
+	// batchSize := 1 // Process individual jobs for more even distribution
 	jobChan := make(chan job, maxPotentialSpreads)
 
 	worker := func(id int, jobChan <-chan job, spreadChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, errorChan chan<- error, progressChan chan<- int) {
@@ -243,40 +225,19 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 		for j := range jobChan {
 			preliminaryRoR := calculatePreliminaryRoR(j.option1, j.option2, j.spreadType)
 			if preliminaryRoR >= j.minReturnOnRisk {
-				spreadChan := make(chan models.OptionSpread, 1)
-				probChan := make(chan models.ProbabilityResult, 1)
-
-				go func() {
-					spread := createOptionSpread(j.option1, j.option2, j.spreadType, j.underlyingPrice, j.riskFreeRate, j.history, j.gkVolatility, j.parkinsonVolatility)
-					spreadChan <- spread
-				}()
-
-				go func() {
-					spread := <-spreadChan
-					returnOnRisk := calculateReturnOnRisk(spread)
-					if returnOnRisk >= j.minReturnOnRisk {
-						probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)
-						probChan <- probabilityResult
-					} else {
-						close(probChan)
-					}
-				}()
-
-				select {
-				case spread := <-spreadChan:
+				spread := createOptionSpread(j.option1, j.option2, j.spreadType, j.underlyingPrice, j.riskFreeRate, j.history, j.gkVolatility, j.parkinsonVolatility)
+				returnOnRisk := calculateReturnOnRisk(spread)
+				if returnOnRisk >= j.minReturnOnRisk {
+					probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)
 					select {
-					case prob, ok := <-probChan:
-						if ok {
-							spreadChan <- models.SpreadWithProbabilities{
-								Spread:      spread,
-								Probability: prob,
-							}
-						}
-					case <-time.After(30 * time.Second):
-						errorChan <- fmt.Errorf("worker %d: Monte Carlo simulation timed out", id)
+					case spreadChan <- models.SpreadWithProbabilities{
+						Spread:      spread,
+						Probability: probabilityResult,
+					}:
+					default:
+						// If channel is full, don't block
+						errorChan <- fmt.Errorf("worker %d: spread channel full, skipping spread", id)
 					}
-				case <-time.After(30 * time.Second):
-					errorChan <- fmt.Errorf("worker %d: spread creation timed out", id)
 				}
 			}
 			progressChan <- 1
@@ -347,27 +308,31 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	spreadsProcessed := 0
 	spreadsIdentified := 0
 	errorCount := 0
-	ticker := time.NewTicker(1 * time.Second)
+	lastPrintTime := time.Now()
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case spread, ok := <-spreadChan:
+		case spreadWithProb, ok := <-spreadChan:
 			if !ok {
 				fmt.Printf("\nIdentified %d %s Spreads meeting minimum return on risk (Errors: %d)\n", spreadsIdentified, spreadType, errorCount)
 				return allSpreads
 			}
-			allSpreads = append(allSpreads, spread)
+			allSpreads = append(allSpreads, spreadWithProb)
 			spreadsIdentified++
-		case err := <-errorChan:
-			fmt.Printf("\nError: %v\n", err)
+		case <-errorChan:
 			errorCount++
 		case <-progressChan:
 			spreadsProcessed++
 		case <-ticker.C:
-			progress := float64(spreadsProcessed) / float64(maxPotentialSpreads) * 100
-			fmt.Printf("\rProcessed %d/%d spreads: %.2f%% of total | Identified: %d | Errors: %d",
-				spreadsProcessed, maxPotentialSpreads, progress, spreadsIdentified, errorCount)
+			now := time.Now()
+			if now.Sub(lastPrintTime) >= time.Second {
+				progress := float64(spreadsProcessed) / float64(maxPotentialSpreads) * 100
+				fmt.Printf("\rProcessed %d/%d spreads: %.2f%% of total | Identified: %d | Errors: %d",
+					spreadsProcessed, maxPotentialSpreads, progress, spreadsIdentified, errorCount)
+				lastPrintTime = now
+			}
 		}
 	}
 }

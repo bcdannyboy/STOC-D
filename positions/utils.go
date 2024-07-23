@@ -8,6 +8,12 @@ import (
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
+func calculateTimeToMaturity(expirationDate string) float64 {
+	expDate, _ := time.Parse("2006-01-02", expirationDate)
+	now := time.Now()
+	return expDate.Sub(now).Hours() / 24 / 365 // Convert to years
+}
+
 func countTotalTasks(chain map[string]*tradier.OptionChain, optionType string) int {
 	total := 0
 	for _, expiration := range chain {

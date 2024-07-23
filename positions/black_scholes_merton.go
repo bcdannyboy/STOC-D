@@ -2,13 +2,12 @@ package positions
 
 import (
 	"math"
-	"time"
 
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
 const (
-	maxIterations = 2000
+	maxIterations = 1000
 	epsilon       = 1e-8
 )
 
@@ -168,12 +167,6 @@ func calculateBSMSkewGamma(option *tradier.Option, S, r, sigma float64) float64 
 
 	// Calculate Skew Gamma (Vomma)
 	return (upVega - downVega) / (upSigma - downSigma)
-}
-
-func calculateTimeToMaturity(expirationDate string) float64 {
-	expDate, _ := time.Parse("2006-01-02", expirationDate)
-	now := time.Now()
-	return expDate.Sub(now).Hours() / 24 / 365 // Convert to years
 }
 
 func normCDF(x float64) float64 {
