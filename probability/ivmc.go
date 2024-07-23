@@ -40,6 +40,10 @@ func MonteCarloSimulationBatch(spreads []models.OptionSpread, underlyingPrice, r
 	return results
 }
 
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) models.ProbabilityResult {
+	return monteCarloSimulation(spread, underlyingPrice, riskFreeRate, daysToExpiration)
+}
+
 func monteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int) models.ProbabilityResult {
 	volatilities := []struct {
 		name string

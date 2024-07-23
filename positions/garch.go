@@ -1,8 +1,10 @@
 package positions
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/bcdannyboy/dquant/tradier"
 	"gonum.org/v1/gonum/optimize"
@@ -86,6 +88,12 @@ func EstimateGARCH11(returns []float64) (GARCH11, error) {
 		return avgParams, nil
 	}
 
+	// Check if the optimized parameters are valid
+	if result.X[0] <= 0 || result.X[1] < 0 || result.X[2] < 0 || result.X[1]+result.X[2] >= 1 {
+		fmt.Println("Optimized parameters are invalid, using MCMC average")
+		return avgParams, nil
+	}
+
 	return GARCH11{Omega: result.X[0], Alpha: result.X[1], Beta: result.X[2]}, nil
 }
 
@@ -115,23 +123,44 @@ func CalculateReturns(history tradier.QuoteHistory) []float64 {
 // CalculateGARCHVolatility estimates GARCH parameters, calculates volatility, and computes Greeks
 func CalculateGARCHVolatility(history tradier.QuoteHistory, option tradier.Option, underlyingPrice, riskFreeRate float64) GARCHResult {
 	returns := CalculateReturns(history)
-	params, err := EstimateGARCH11(returns)
-	if err != nil {
-		// If GARCH estimation fails, use a default volatility (e.g., historical volatility)
-		defaultVolatility := calculateHistoricalVolatility(returns)
-		return GARCHResult{
-			Params:     params,
-			Volatility: defaultVolatility,
-			Greeks:     calculateGreeks(option, underlyingPrice, riskFreeRate, defaultVolatility),
-		}
-	}
-	volatility := params.ConditionalVolatility(returns)
-	greeks := calculateGreeks(option, underlyingPrice, riskFreeRate, volatility)
 
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create a channel to receive the result
+	resultChan := make(chan GARCHResult, 1)
+
+	go func() {
+		params, err := EstimateGARCH11(returns)
+		if err != nil {
+			resultChan <- createDefaultGARCHResult(returns, option, underlyingPrice, riskFreeRate)
+			return
+		}
+		volatility := params.ConditionalVolatility(returns)
+		greeks := calculateGreeks(option, underlyingPrice, riskFreeRate, volatility)
+		resultChan <- GARCHResult{
+			Params:     params,
+			Volatility: volatility,
+			Greeks:     greeks,
+		}
+	}()
+
+	select {
+	case result := <-resultChan:
+		return result
+	case <-ctx.Done():
+		fmt.Println("GARCH estimation timed out, using historical volatility")
+		return createDefaultGARCHResult(returns, option, underlyingPrice, riskFreeRate)
+	}
+}
+
+func createDefaultGARCHResult(returns []float64, option tradier.Option, underlyingPrice, riskFreeRate float64) GARCHResult {
+	defaultVolatility := calculateHistoricalVolatility(returns)
 	return GARCHResult{
-		Params:     params,
-		Volatility: volatility,
-		Greeks:     greeks,
+		Params:     GARCH11{Omega: 0, Alpha: 0, Beta: 0},
+		Volatility: defaultVolatility,
+		Greeks:     calculateGreeks(option, underlyingPrice, riskFreeRate, defaultVolatility),
 	}
 }
 
