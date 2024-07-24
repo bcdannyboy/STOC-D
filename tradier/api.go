@@ -96,7 +96,8 @@ func GET_OPTIONS_CHAIN(Symbol, Token string, minDTE, maxDTE int) (map[string]*Op
 		chain_resp, _ := client.Do(cr)
 		chain_responseData, err := ioutil.ReadAll(chain_resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read chain response data: %s", err)
+			fmt.Printf("Error reading chain response data for expiration %s: %s\n", exp_date, err)
+			continue
 		}
 
 		defer chain_resp.Body.Close()
@@ -104,7 +105,8 @@ func GET_OPTIONS_CHAIN(Symbol, Token string, minDTE, maxDTE int) (map[string]*Op
 		optionChain := &OptionChain{}
 		err = json.Unmarshal(chain_responseData, optionChain)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal chain response data: %s", err)
+			fmt.Printf("Error unmarshalling chain response data for expiration %s: %s\n", exp_date, err)
+			continue
 		}
 
 		optionChain.ExpirationDate = exp_date // Set the expiration date explicitly

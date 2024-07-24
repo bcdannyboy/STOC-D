@@ -18,71 +18,6 @@ const (
 	workerPoolSize = 1000
 )
 
-func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
-	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate)
-	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate)
-
-	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
-	spreadType := determineSpreadType(shortOpt, longOpt)
-
-	intrinsicValue := calculateIntrinsicValue(shortLeg, longLeg, underlyingPrice, spreadType)
-	extrinsicValue := spreadCredit - intrinsicValue
-
-	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
-
-	spreadImpliedVol := calculateSpreadImpliedVol(shortLeg, longLeg, gkVolatility, parkinsonVolatility)
-	greeks := calculateSpreadGreeks(shortLeg, longLeg)
-
-	return models.OptionSpread{
-		ShortLeg:       shortLeg,
-		LongLeg:        longLeg,
-		SpreadType:     spreadType,
-		SpreadCredit:   spreadCredit,
-		SpreadBSMPrice: spreadBSMPrice,
-		ExtrinsicValue: extrinsicValue,
-		IntrinsicValue: intrinsicValue,
-		ImpliedVol:     spreadImpliedVol,
-		Greeks:         greeks,
-	}
-}
-
-func calculateSpreadImpliedVol(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
-	combinedBidIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.BidIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.BidIv) /
-		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
-	combinedAskIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.AskIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.AskIv) /
-		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
-	combinedMidIV := (shortLeg.Option.Greeks.Vega*shortLeg.Option.Greeks.MidIv + longLeg.Option.Greeks.Vega*longLeg.Option.Greeks.MidIv) /
-		(shortLeg.Option.Greeks.Vega + longLeg.Option.Greeks.Vega)
-	combinedBSMIV := (shortLeg.BSMResult.Vega*shortLeg.BSMResult.ImpliedVolatility + longLeg.BSMResult.Vega*longLeg.BSMResult.ImpliedVolatility) /
-		(shortLeg.BSMResult.Vega + longLeg.BSMResult.Vega)
-
-	return models.SpreadImpliedVol{
-		BidIV:               combinedBidIV,
-		AskIV:               combinedAskIV,
-		MidIV:               combinedMidIV,
-		BSMIV:               combinedBSMIV,
-		GarmanKlassIV:       gkVolatility,
-		ParkinsonVolatility: parkinsonVolatility,
-		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
-	}
-}
-
-func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64) models.SpreadLeg {
-	bsmResult := CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
-	intrinsicValue := calculateSingleOptionIntrinsicValue(option, underlyingPrice)
-	extrinsicValue := math.Max(0, bsmResult.Price-intrinsicValue)
-
-	return models.SpreadLeg{
-		Option:         option,
-		BSMResult:      sanitizeBSMResult(bsmResult),
-		BidImpliedVol:  option.Greeks.BidIv,
-		AskImpliedVol:  option.Greeks.AskIv,
-		MidImpliedVol:  option.Greeks.MidIv,
-		ExtrinsicValue: extrinsicValue,
-		IntrinsicValue: intrinsicValue,
-	}
-}
-
 func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("IdentifySpreads started at %v", startTime)
@@ -94,89 +29,73 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	fmt.Printf("Identifying %s Spreads for underlying price: %.2f, Risk-Free Rate: %.4f, Min Return on Risk: %.4f\n", spreadType, underlyingPrice, riskFreeRate, minReturnOnRisk)
 
-	gkVolatility := CalculateGarmanKlassVolatility(history).Volatility
-	parkinsonVolatility := CalculateParkinsonsVolatility(history)
+	gkVolatilities := models.CalculateGarmanKlassVolatilities(history)
+	parkinsonVolatilities := models.CalculateParkinsonsVolatilities(history)
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 	fmt.Printf("Using %d CPUs\n", numCPU)
 
+	totalJobs := calculateTotalJobs(chain, spreadType)
+	fmt.Printf("Total spreads to process: %d\n", totalJobs)
+
 	log.Printf("Starting processChainOptimized at %v", time.Now())
-	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk, currentDate, spreadType)
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
 	log.Printf("Finished processChainOptimized at %v", time.Now())
 
-	log.Printf("Sorting %d spreads by average probability", len(spreads))
+	log.Printf("Sorting %d spreads by highest probability", len(spreads))
 	sort.Slice(spreads, func(i, j int) bool {
 		return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
 	})
 
-	fmt.Printf("\nProcessing complete. Total time: %v\n", time.Since(currentDate))
-	fmt.Printf("Identified %d %s Spreads meeting minimum return on risk\n", len(spreads), spreadType)
+	fmt.Printf("\nProcessing complete. Total time: %v\n", time.Since(startTime))
+	fmt.Printf("Identified %d %s Spreads meeting criteria\n", len(spreads), spreadType)
 
 	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
 	return spreads
 }
 
-func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("processChainOptimized started at %v", startTime)
 
 	jobChan := make(chan job, workerPoolSize)
 	resultChan := make(chan models.SpreadWithProbabilities, workerPoolSize)
-	done := make(chan struct{})
 
-	log.Printf("Starting worker pool at %v", time.Now())
 	var wg sync.WaitGroup
 	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate)
+		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history)
 	}
 
-	log.Printf("Starting job generator at %v", time.Now())
-	go generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk, currentDate, spreadType, jobChan)
-
-	var spreads []models.SpreadWithProbabilities
 	go func() {
-		for spread := range resultChan {
-			spreads = append(spreads, spread)
-		}
-		close(done)
+		generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, currentDate, spreadType, jobChan)
+		close(jobChan)
 	}()
 
-	wg.Wait()
-	close(resultChan)
-	<-done
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	var spreads []models.SpreadWithProbabilities
+	var processed int
+	for spread := range resultChan {
+		if isSpreadViable(spread, minReturnOnRisk) {
+			spreads = append(spreads, spread)
+		}
+		processed++
+		if processed >= totalJobs {
+			break
+		}
+		fmt.Printf("%d/%d spreads processed (%.2f%%)\n", processed, totalJobs, (float64(processed)/float64(totalJobs))*100)
+	}
 
 	log.Printf("processChainOptimized finished at %v. Total time: %v", time.Now(), time.Since(startTime))
 	return spreads
 }
 
-func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate float64) {
-	defer wg.Done()
-	for j := range jobQueue {
-		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, j.gkVolatility, j.parkinsonVolatility)
-		returnOnRisk := calculateReturnOnRisk(spread)
-		if returnOnRisk >= j.minReturnOnRisk {
-			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration)
-			select {
-			case resultChan <- models.SpreadWithProbabilities{
-				Spread:      spread,
-				Probability: probabilityResult,
-			}:
-			default:
-				// If the channel is full, log a warning and continue
-				log.Printf("Warning: Result channel is full, skipping a result")
-			}
-		}
-	}
-}
-
-func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility, minReturnOnRisk float64, currentDate time.Time, spreadType string, jobQueue chan<- job) {
-	startTime := time.Now()
-	log.Printf("generateJobs started at %v", startTime)
-	defer close(jobQueue)
-
-	jobCount := 0
+func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, currentDate time.Time, spreadType string, jobQueue chan<- job) {
 	for exp_date, expiration := range chain {
 		options := filterOptions(expiration.Options.Option, spreadType)
 		if len(options) == 0 {
@@ -207,30 +126,149 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 					}
 				}
 
-				select {
-				case jobQueue <- job{
-					option1:             option1,
-					option2:             option2,
-					underlyingPrice:     underlyingPrice,
-					riskFreeRate:        riskFreeRate,
-					gkVolatility:        gkVolatility,
-					parkinsonVolatility: parkinsonVolatility,
-					minReturnOnRisk:     minReturnOnRisk,
-					daysToExpiration:    daysToExpiration,
-				}:
-					jobCount++
-					if jobCount%1000 == 0 {
-						log.Printf("Generated %d jobs at %v", jobCount, time.Now())
-					}
-				default:
-					// If the channel is full, wait a bit and try again
-					time.Sleep(time.Millisecond)
+				jobQueue <- job{
+					option1:               option1,
+					option2:               option2,
+					underlyingPrice:       underlyingPrice,
+					riskFreeRate:          riskFreeRate,
+					gkVolatilities:        gkVolatilities,
+					parkinsonVolatilities: parkinsonVolatilities,
+					daysToExpiration:      daysToExpiration,
 				}
 			}
 		}
 	}
+}
 
-	log.Printf("generateJobs finished at %v. Total time: %v. Total jobs: %d", time.Now(), time.Since(startTime), jobCount)
+func calculateTotalJobs(chain map[string]*tradier.OptionChain, spreadType string) int {
+	totalJobs := 0
+	for _, expiration := range chain {
+		options := filterOptions(expiration.Options.Option, spreadType)
+		if len(options) == 0 {
+			continue
+		}
+
+		for i := 0; i < len(options)-1; i++ {
+			for j := i + 1; j < len(options); j++ {
+				totalJobs++
+			}
+		}
+	}
+	return totalJobs
+}
+
+func isSpreadViable(spread models.SpreadWithProbabilities, minROR float64) bool {
+	return spread.Spread.ROR > minROR
+}
+
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory) {
+	defer wg.Done()
+	for j := range jobQueue {
+		// Process each period's volatilities
+		for period, gkVolatility := range j.gkVolatilities {
+			if parkinsonVolatility, ok := j.parkinsonVolatilities[period]; ok {
+				spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, gkVolatility, parkinsonVolatility)
+				returnOnRisk := calculateReturnOnRisk(spread)
+				if returnOnRisk >= minReturnOnRisk {
+					probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, history)
+					resultChan <- models.SpreadWithProbabilities{
+						Spread:      spread,
+						Probability: probabilityResult,
+					}
+				}
+			}
+		}
+	}
+}
+
+func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
+	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate)
+	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate)
+
+	spreadType := determineSpreadType(shortOpt, longOpt)
+
+	intrinsicValue := calculateIntrinsicValue(shortLeg, longLeg, underlyingPrice, spreadType)
+	spreadCredit := shortLeg.Option.Bid - longLeg.Option.Ask
+	extrinsicValue := spreadCredit - intrinsicValue
+
+	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
+
+	spreadImpliedVol := calculateSpreadImpliedVol(shortLeg, longLeg, gkVolatility, parkinsonVolatility)
+	greeks := calculateSpreadGreeks(shortLeg, longLeg)
+
+	ror := calculateReturnOnRisk(models.OptionSpread{
+		ShortLeg:       shortLeg,
+		LongLeg:        longLeg,
+		SpreadType:     spreadType,
+		SpreadCredit:   spreadCredit,
+		SpreadBSMPrice: spreadBSMPrice,
+		ExtrinsicValue: extrinsicValue,
+		IntrinsicValue: intrinsicValue,
+		ImpliedVol:     spreadImpliedVol,
+		Greeks:         greeks,
+	})
+
+	return models.OptionSpread{
+		ShortLeg:       shortLeg,
+		LongLeg:        longLeg,
+		SpreadType:     spreadType,
+		SpreadCredit:   spreadCredit,
+		SpreadBSMPrice: spreadBSMPrice,
+		ExtrinsicValue: extrinsicValue,
+		IntrinsicValue: intrinsicValue,
+		ImpliedVol:     spreadImpliedVol,
+		Greeks:         greeks,
+		ROR:            ror,
+	}
+}
+
+func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64) models.SpreadLeg {
+	bsmResult := CalculateOptionMetrics(&option, underlyingPrice, riskFreeRate)
+	intrinsicValue := calculateSingleOptionIntrinsicValue(option, underlyingPrice)
+	extrinsicValue := math.Max(0, bsmResult.Price-intrinsicValue)
+
+	return models.SpreadLeg{
+		Option:         option,
+		BSMResult:      sanitizeBSMResult(bsmResult),
+		BidImpliedVol:  option.Greeks.BidIv,
+		AskImpliedVol:  option.Greeks.AskIv,
+		MidImpliedVol:  option.Greeks.MidIv,
+		ExtrinsicValue: extrinsicValue,
+		IntrinsicValue: intrinsicValue,
+	}
+}
+
+func calculateSpreadImpliedVol(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
+	shortVega := shortLeg.BSMResult.Vega
+	longVega := longLeg.BSMResult.Vega
+
+	combinedBidIV := (shortVega*shortLeg.Option.Greeks.BidIv + longVega*longLeg.Option.Greeks.BidIv) / (shortVega + longVega)
+	combinedAskIV := (shortVega*shortLeg.Option.Greeks.AskIv + longVega*longLeg.Option.Greeks.AskIv) / (shortVega + longVega)
+	combinedMidIV := (shortVega*shortLeg.Option.Greeks.MidIv + longVega*longLeg.Option.Greeks.MidIv) / (shortVega + longVega)
+	combinedBSMIV := (shortVega*shortLeg.BSMResult.ImpliedVolatility + longVega*longLeg.BSMResult.ImpliedVolatility) / (shortVega + longVega)
+
+	if combinedBidIV <= 0 {
+		combinedBidIV = shortLeg.Option.Greeks.BidIv
+	}
+	if combinedAskIV <= 0 {
+		combinedAskIV = shortLeg.Option.Greeks.AskIv
+	}
+	if combinedMidIV <= 0 {
+		combinedMidIV = shortLeg.Option.Greeks.MidIv
+	}
+	if combinedBSMIV <= 0 {
+		combinedBSMIV = shortLeg.BSMResult.ImpliedVolatility
+	}
+
+	return models.SpreadImpliedVol{
+		BidIV:               combinedBidIV,
+		AskIV:               combinedAskIV,
+		MidIV:               combinedMidIV,
+		BSMIV:               combinedBSMIV,
+		GarmanKlassIV:       gkVolatility,
+		ParkinsonVolatility: parkinsonVolatility,
+		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
+	}
 }
 
 func determineSpreadType(shortOpt, longOpt tradier.Option) string {
@@ -282,17 +320,6 @@ func sanitizeBSMResult(result BSMResult) models.BSMResult {
 	}
 }
 
-func calculateSpreadIV(shortLeg, longLeg models.SpreadLeg, gkVolatility float64) models.SpreadImpliedVol {
-	return models.SpreadImpliedVol{
-		BidIV:         sanitizeFloat(shortLeg.BidImpliedVol - longLeg.BidImpliedVol),
-		AskIV:         sanitizeFloat(shortLeg.AskImpliedVol - longLeg.AskImpliedVol),
-		MidIV:         sanitizeFloat(shortLeg.MidImpliedVol - longLeg.MidImpliedVol),
-		BSMIV:         sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility - longLeg.BSMResult.ImpliedVolatility),
-		ShortLegBSMIV: sanitizeFloat(shortLeg.BSMResult.ImpliedVolatility),
-		GarmanKlassIV: gkVolatility,
-	}
-}
-
 func calculateReturnOnRisk(spread models.OptionSpread) float64 {
 	var maxRisk float64
 	if spread.SpreadType == "Bull Put" {
@@ -302,7 +329,7 @@ func calculateReturnOnRisk(spread models.OptionSpread) float64 {
 	}
 
 	if maxRisk <= 0 {
-		fmt.Printf("Invalid maxRisk: %.2f for spread: Short Strike %.2f, Long Strike %.2f, Credit %.2f\n",
+		log.Printf("Invalid maxRisk: %.2f for spread: Short Strike %.2f, Long Strike %.2f, Credit %.2f\n",
 			maxRisk, spread.ShortLeg.Option.Strike, spread.LongLeg.Option.Strike, spread.SpreadCredit)
 		return 0
 	}
@@ -329,21 +356,4 @@ func filterCallOptions(options []tradier.Option) []tradier.Option {
 		}
 	}
 	return calls
-}
-
-func calculatePreliminaryRoR(option1, option2 tradier.Option, spreadType string) float64 {
-	var spreadCredit, maxRisk float64
-	if spreadType == "Bull Put" {
-		spreadCredit = option1.Bid - option2.Ask
-		maxRisk = option1.Strike - option2.Strike - spreadCredit
-	} else { // Bear Call
-		spreadCredit = option1.Bid - option2.Ask
-		maxRisk = option2.Strike - option1.Strike - spreadCredit
-	}
-
-	if maxRisk <= 0 {
-		return 0
-	}
-
-	return spreadCredit / maxRisk
 }

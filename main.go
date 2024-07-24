@@ -1,18 +1,19 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/positions"
 	"github.com/bcdannyboy/dquant/tradier"
 	"github.com/joho/godotenv"
+	"github.com/xhhuango/json"
 )
 
 func main() {
@@ -23,80 +24,81 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	Symbol := "SLB"
+	symbols := []string{"GTLB"}
+	indicators := map[string]int{
+		"GTLB": 1,
+	}
+
 	minDTE := 5
-	maxDTE := 15
+	maxDTE := 45
 	rfr := 0.0416
-	indicator := 1
-	minRoR := 0.1
+	minRoR := 0.2
 
 	today := time.Now().Format("2006-01-02")
 	tenyrsago := time.Now().AddDate(-10, 0, 0).Format("2006-01-02")
-	quotes, err := tradier.GET_QUOTES(Symbol, tenyrsago, today, "daily", tradier_key)
-	if err != nil {
-		fmt.Printf("Error fetching quotes for %s: %s\n", Symbol, err.Error())
-		return
+	var allSpreads []models.SpreadWithProbabilities
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, symbol := range symbols {
+		wg.Add(1)
+		go func(symbol string) {
+			defer wg.Done()
+
+			quotes, err := tradier.GET_QUOTES(symbol, tenyrsago, today, "daily", tradier_key)
+			if err != nil {
+				fmt.Printf("Error fetching quotes for %s: %s\n", symbol, err.Error())
+				return
+			}
+
+			optionsChains, err := tradier.GET_OPTIONS_CHAIN(symbol, tradier_key, minDTE, maxDTE)
+			if err != nil {
+				fmt.Printf("Error fetching options chain for %s: %s\n", symbol, err.Error())
+				return
+			}
+
+			last_price := quotes.History.Day[len(quotes.History.Day)-1].Close
+
+			fmt.Printf("Last price for %s: %.2f\n", symbol, last_price)
+			fmt.Printf("Risk-free rate: %.4f\n", rfr)
+			fmt.Printf("Minimum Return on Risk: %.2f\n", minRoR)
+
+			var spreads []models.SpreadWithProbabilities
+			indicator := indicators[symbol]
+			if indicator > 0 {
+				fmt.Printf("Identifying Bull Put Spreads for %s\n", symbol)
+				BullPuts := positions.IdentifyBullPutSpreads(optionsChains, last_price, rfr, *quotes, minRoR, time.Now())
+				spreads = BullPuts
+			} else {
+				fmt.Printf("Identifying Bear Call Spreads for %s\n", symbol)
+				BearCalls := positions.IdentifyBearCallSpreads(optionsChains, last_price, rfr, *quotes, minRoR, time.Now())
+				spreads = BearCalls
+			}
+
+			mu.Lock()
+			allSpreads = append(allSpreads, spreads...)
+			mu.Unlock()
+		}(symbol)
 	}
 
-	fmt.Printf("Calculating Parkinsons Metrics for %s\n", Symbol)
-	ParkinsonsResult := positions.CalculateParkinsonsMetrics(*quotes)
+	wg.Wait()
 
-	fP := "ParkinsonsResult.json"
-	jParkinsonsResult, err := json.Marshal(ParkinsonsResult)
-	if err != nil {
-		fmt.Printf("Error marshalling ParkinsonsResult: %s\n", err.Error())
-		return
-	}
-
-	err = ioutil.WriteFile(fP, jParkinsonsResult, 0644)
-	if err != nil {
-		fmt.Printf("Error writing to file %s: %s\n", fP, err.Error())
-		return
-	}
-
-	optionsChains, err := tradier.GET_OPTIONS_CHAIN(Symbol, tradier_key, minDTE, maxDTE)
-	if err != nil {
-		fmt.Printf("Error fetching options chain for %s: %s\n", Symbol, err.Error())
-		return
-	}
-
-	last_price := quotes.History.Day[len(quotes.History.Day)-1].Close
-
-	fmt.Printf("Last price: %.2f\n", last_price)
-	fmt.Printf("Risk-free rate: %.4f\n", rfr)
-	fmt.Printf("Minimum Return on Risk: %.2f\n", minRoR)
-
-	spreads := []models.SpreadWithProbabilities{}
-	if indicator > 0 {
-		fmt.Printf("Identifying Bull Put Spreads for %s\n", Symbol)
-		BullPuts := positions.IdentifyBullPutSpreads(optionsChains, last_price, rfr, *quotes, minRoR, time.Now())
-		spreads = BullPuts
-	} else {
-		fmt.Printf("Identifying Bear Call Spreads for %s\n", Symbol)
-		BearCalls := positions.IdentifyBearCallSpreads(optionsChains, last_price, rfr, *quotes, minRoR, time.Now())
-		spreads = BearCalls
-	}
-
-	fmt.Printf("Number of identified spreads: %d\n", len(spreads))
-	if len(spreads) == 0 {
+	fmt.Printf("Number of identified spreads: %d\n", len(allSpreads))
+	if len(allSpreads) == 0 {
 		fmt.Println("No spreads identified. Check minRoR and other parameters.")
 		return
 	}
 
-	if len(spreads) > 0 {
-		sort.Slice(spreads, func(i, j int) bool {
-			return spreads[i].Probability.AverageProbability > spreads[j].Probability.AverageProbability
-		})
+	sort.Slice(allSpreads, func(i, j int) bool {
+		return allSpreads[i].Probability.AverageProbability > allSpreads[j].Probability.AverageProbability
+	})
 
-		if len(spreads) > 10 {
-			spreads = spreads[:10]
-		}
-	} else {
-		fmt.Println("No spreads to sort or slice.")
-		return
+	if len(allSpreads) > 10 {
+		allSpreads = allSpreads[:10]
 	}
 
-	jspreads, err := json.Marshal(spreads)
+	jspreads, err := json.Marshal(allSpreads)
 	if err != nil {
 		fmt.Printf("Error marshalling spreads: %s\n", err.Error())
 		return
@@ -109,5 +111,5 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Successfully wrote %d spreads to %s\n", len(spreads), f)
+	fmt.Printf("Successfully wrote %d spreads to %s\n", len(allSpreads), f)
 }

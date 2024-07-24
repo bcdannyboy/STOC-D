@@ -1,4 +1,4 @@
-package positions
+package models
 
 import (
 	"math"
@@ -6,49 +6,35 @@ import (
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
-func CalculateParkinsonsMetrics(history tradier.QuoteHistory) []ParkinsonsResult {
-	results := []ParkinsonsResult{}
+func CalculateParkinsonsVolatilities(history tradier.QuoteHistory) map[string]float64 {
+	results := make(map[string]float64)
 
 	periods := []struct {
 		name string
 		days int
 	}{
 		{"Last Day", 1},
-		{"period_5d", 5},
-		{"period_1w", 5},
-		{"period_2w", 10},
-		{"period_1m", 21},
-		{"period_3m", 63},
-		{"period_6m", 126},
-		{"period_1y", 252},
-		{"period_3y", 756},
-		{"period_5y", 1260},
-		{"period_10y", 2520},
+		{"5d", 5},
+		{"1w", 5},
+		{"2w", 10},
+		{"1m", 21},
+		{"3m", 63},
+		{"6m", 126},
+		{"1y", 252},
+		{"3y", 756},
+		{"5y", 1260},
+		{"10y", 2520},
 	}
 
 	for _, period := range periods {
-		if parkinsons, stdDev := calculatePeriodMetrics(history, period.days); parkinsons != 0 {
-			results = append(results, ParkinsonsResult{
-				Period:            period.name,
-				ParkinsonsNumber:  parkinsons,
-				StandardDeviation: stdDev,
-				Difference:        parkinsons - (1.67 * stdDev),
-			})
+		if len(history.History.Day) >= period.days {
+			if parkinsons, _ := calculatePeriodMetrics(history, period.days); parkinsons != 0 {
+				results[period.name] = AnnualizeParkinson(parkinsons, period.name)
+			}
 		}
 	}
 
 	return results
-}
-
-func CalculateParkinsonsVolatility(history tradier.QuoteHistory) float64 {
-	// Calculate for the last day only
-	if len(history.History.Day) < 1 {
-		return 0
-	}
-	lastDay := history.History.Day[len(history.History.Day)-1]
-	highs := []float64{lastDay.High}
-	lows := []float64{lastDay.Low}
-	return AnnualizeParkinson(calculateParkinsonsNumber(highs, lows), "Last Day")
 }
 
 func calculatePeriodMetrics(history tradier.QuoteHistory, days int) (float64, float64) {
@@ -124,58 +110,27 @@ func AnnualizeParkinson(parkinsonsNumber float64, period string) float64 {
 	switch period {
 	case "Last Day":
 		tradingDays = 1
-	case "period_5d", "period_1w":
+	case "5d", "1w":
 		tradingDays = 5
-	case "period_2w":
+	case "2w":
 		tradingDays = 10
-	case "period_1m":
+	case "1m":
 		tradingDays = 21
-	case "period_3m":
+	case "3m":
 		tradingDays = 63
-	case "period_6m":
+	case "6m":
 		tradingDays = 126
-	case "period_1y":
+	case "1y":
 		tradingDays = 252
-	case "period_3y":
+	case "3y":
 		tradingDays = 756
-	case "period_5y":
+	case "5y":
 		tradingDays = 1260
-	case "period_10y":
+	case "10y":
 		tradingDays = 2520
 	default:
 		return parkinsonsNumber
 	}
 
 	return parkinsonsNumber * math.Sqrt(252/tradingDays)
-}
-
-// AnnualizeStandardDeviation annualizes the standard deviation
-func AnnualizeStandardDeviation(stdDev float64, period string) float64 {
-	var tradingDays float64
-	switch period {
-	case "Last Day":
-		tradingDays = 1
-	case "period_5d", "period_1w":
-		tradingDays = 5
-	case "period_2w":
-		tradingDays = 10
-	case "period_1m":
-		tradingDays = 21
-	case "period_3m":
-		tradingDays = 63
-	case "period_6m":
-		tradingDays = 126
-	case "period_1y":
-		tradingDays = 252
-	case "period_3y":
-		tradingDays = 756
-	case "period_5y":
-		tradingDays = 1260
-	case "period_10y":
-		tradingDays = 2520
-	default:
-		return stdDev
-	}
-
-	return stdDev * math.Sqrt(252/tradingDays)
 }

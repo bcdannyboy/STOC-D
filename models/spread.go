@@ -25,6 +25,7 @@ type OptionSpread struct {
 	IntrinsicValue float64
 	Greeks         BSMResult
 	ImpliedVol     SpreadImpliedVol
+	ROR            float64
 }
 
 type BSMResult struct {
@@ -61,8 +62,9 @@ type SpreadWithProbabilities struct {
 }
 
 type ProbabilityResult struct {
-	Probabilities      map[string]float64
-	AverageProbability float64
+	Probabilities           map[string]float64
+	AverageProbability      float64
+	FuzzyAverageProbability float64
 }
 
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {
@@ -79,5 +81,5 @@ func IsProfitable(spread OptionSpread, finalPrice float64) bool {
 func CalculateAverageVolatility(spread OptionSpread) float64 {
 	return (spread.ImpliedVol.BidIV + spread.ImpliedVol.AskIV + spread.ImpliedVol.MidIV +
 		spread.ImpliedVol.BSMIV +
-		spread.ImpliedVol.ShortLegBSMIV + spread.ImpliedVol.GarmanKlassIV) / 7
+		spread.ImpliedVol.ShortLegBSMIV + spread.ImpliedVol.GarmanKlassIV) / 6
 }
