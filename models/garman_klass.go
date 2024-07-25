@@ -13,17 +13,10 @@ func CalculateGarmanKlassVolatilities(history tradier.QuoteHistory) map[string]f
 		name string
 		days int
 	}{
-		{"Last Day", 1},
-		{"5d", 5},
 		{"1w", 5},
-		{"2w", 10},
 		{"1m", 21},
 		{"3m", 63},
 		{"6m", 126},
-		{"1y", 252},
-		{"3y", 756},
-		{"5y", 1260},
-		{"10y", 2520},
 	}
 
 	for _, period := range periods {

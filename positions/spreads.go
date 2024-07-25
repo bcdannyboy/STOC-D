@@ -31,6 +31,9 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 	gkVolatilities := models.CalculateGarmanKlassVolatilities(history)
 	parkinsonVolatilities := models.CalculateParkinsonsVolatilities(history)
+	localVolSurface := models.CalculateLocalVolatilitySurface(chain, underlyingPrice)
+
+	hestonParams := calculateHestonParameters(history, underlyingPrice, riskFreeRate)
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
@@ -40,7 +43,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Total spreads to process: %d\n", totalJobs)
 
 	log.Printf("Starting processChainOptimized at %v", time.Now())
-	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, hestonParams, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
 	log.Printf("Finished processChainOptimized at %v", time.Now())
 
 	log.Printf("Sorting %d spreads by highest probability", len(spreads))
@@ -55,7 +58,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	return spreads
 }
 
-func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, hestonParams models.HestonParameters, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("processChainOptimized started at %v", startTime)
 
@@ -65,11 +68,11 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var wg sync.WaitGroup
 	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history)
+		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface)
 	}
 
 	go func() {
-		generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, currentDate, spreadType, jobChan)
+		generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, hestonParams, localVolSurface, currentDate, spreadType, jobChan)
 		close(jobChan)
 	}()
 
@@ -81,7 +84,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var spreads []models.SpreadWithProbabilities
 	var processed int
 	for spread := range resultChan {
-		if isSpreadViable(spread, minReturnOnRisk) {
+		if isSpreadViable(spread, minReturnOnRisk) && spread.MeetsRoR {
 			spreads = append(spreads, spread)
 		}
 		processed++
@@ -95,7 +98,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	return spreads
 }
 
-func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, currentDate time.Time, spreadType string, jobQueue chan<- job) {
+func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, hestonParams models.HestonParameters, localVolSurface models.VolatilitySurface, currentDate time.Time, spreadType string, jobQueue chan<- job) {
 	for exp_date, expiration := range chain {
 		options := filterOptions(expiration.Options.Option, spreadType)
 		if len(options) == 0 {
@@ -133,6 +136,8 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 					riskFreeRate:          riskFreeRate,
 					gkVolatilities:        gkVolatilities,
 					parkinsonVolatilities: parkinsonVolatilities,
+					hestonParams:          hestonParams,
+					localVolSurface:       localVolSurface,
 					daysToExpiration:      daysToExpiration,
 				}
 			}
@@ -140,42 +145,27 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 	}
 }
 
-func calculateTotalJobs(chain map[string]*tradier.OptionChain, spreadType string) int {
-	totalJobs := 0
-	for _, expiration := range chain {
-		options := filterOptions(expiration.Options.Option, spreadType)
-		if len(options) == 0 {
-			continue
-		}
-
-		for i := 0; i < len(options)-1; i++ {
-			for j := i + 1; j < len(options); j++ {
-				totalJobs++
-			}
-		}
-	}
-	return totalJobs
-}
-
-func isSpreadViable(spread models.SpreadWithProbabilities, minROR float64) bool {
-	return spread.Spread.ROR > minROR
-}
-
-func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory) {
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface) {
 	defer wg.Done()
 	for j := range jobQueue {
-		// Process each period's volatilities
-		for period, gkVolatility := range j.gkVolatilities {
-			if parkinsonVolatility, ok := j.parkinsonVolatilities[period]; ok {
-				spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, gkVolatility, parkinsonVolatility)
-				returnOnRisk := calculateReturnOnRisk(spread)
-				if returnOnRisk >= minReturnOnRisk {
-					probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, history)
-					resultChan <- models.SpreadWithProbabilities{
-						Spread:      spread,
-						Probability: probabilityResult,
-					}
-				}
+		gkVol := j.gkVolatilities[j.option1.ExpirationDate]
+		parkinsonVol := j.parkinsonVolatilities[j.option1.ExpirationDate]
+
+		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, gkVol, parkinsonVol)
+		returnOnRisk := calculateReturnOnRisk(spread)
+
+		// Check ROR before running Monte Carlo simulation
+		if returnOnRisk >= minReturnOnRisk {
+			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.gkVolatilities, j.parkinsonVolatilities, j.hestonParams, j.localVolSurface, history)
+			resultChan <- models.SpreadWithProbabilities{
+				Spread:      spread,
+				Probability: probabilityResult,
+				MeetsRoR:    true,
+			}
+		} else {
+			resultChan <- models.SpreadWithProbabilities{
+				Spread:   spread,
+				MeetsRoR: false,
 			}
 		}
 	}
@@ -220,6 +210,27 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 		Greeks:         greeks,
 		ROR:            ror,
 	}
+}
+
+func calculateTotalJobs(chain map[string]*tradier.OptionChain, spreadType string) int {
+	totalJobs := 0
+	for _, expiration := range chain {
+		options := filterOptions(expiration.Options.Option, spreadType)
+		if len(options) == 0 {
+			continue
+		}
+
+		for i := 0; i < len(options)-1; i++ {
+			for j := i + 1; j < len(options); j++ {
+				totalJobs++
+			}
+		}
+	}
+	return totalJobs
+}
+
+func isSpreadViable(spread models.SpreadWithProbabilities, minROR float64) bool {
+	return spread.Spread.ROR > minROR
 }
 
 func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float64) models.SpreadLeg {

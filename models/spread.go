@@ -59,6 +59,7 @@ type SpreadImpliedVol struct {
 type SpreadWithProbabilities struct {
 	Spread      OptionSpread
 	Probability ProbabilityResult
+	MeetsRoR    bool
 }
 
 type ProbabilityResult struct {

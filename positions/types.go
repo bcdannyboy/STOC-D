@@ -1,19 +1,20 @@
 package positions
 
-import "github.com/bcdannyboy/dquant/tradier"
+import (
+	"github.com/bcdannyboy/dquant/models"
+	"github.com/bcdannyboy/dquant/tradier"
+)
 
 type job struct {
-	spreadType            string
 	option1, option2      tradier.Option
 	underlyingPrice       float64
 	riskFreeRate          float64
-	history               tradier.QuoteHistory
 	gkVolatilities        map[string]float64
 	parkinsonVolatilities map[string]float64
-	minReturnOnRisk       float64
+	hestonParams          models.HestonParameters
+	localVolSurface       models.VolatilitySurface
 	daysToExpiration      int
 }
-
 type BSMResult struct {
 	Price             float64
 	ImpliedVolatility float64

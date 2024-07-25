@@ -24,13 +24,13 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"GTLB"}
+	symbols := []string{"SPY"}
 	indicators := map[string]int{
-		"GTLB": 1,
+		"SPY": 1,
 	}
 
 	minDTE := 5
-	maxDTE := 45
+	maxDTE := 60
 	rfr := 0.0416
 	minRoR := 0.2
 

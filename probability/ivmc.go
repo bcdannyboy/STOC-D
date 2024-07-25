@@ -17,10 +17,8 @@ const (
 	timeSteps      = 252 // Assuming 252 trading days in a year
 )
 
-func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, history tradier.QuoteHistory) models.ProbabilityResult {
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, gkVolatilities map[string]float64, parkinsonVolatilities map[string]float64, hestonParams models.HestonParameters, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.ProbabilityResult {
 	combinedIV := calculateCombinedIV(spread)
-	gkVolatilities := models.CalculateGarmanKlassVolatilities(history)
-	parkinsonVolatilities := models.CalculateParkinsonsVolatilities(history)
 
 	volatilities := []struct {
 		name string
