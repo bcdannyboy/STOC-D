@@ -21,10 +21,10 @@ var rngPool = sync.Pool{
 	},
 }
 
-func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.SpreadWithProbabilities {
-	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, gkVolatilities, parkinsonVolatilities)
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.SpreadWithProbabilities {
+	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities)
 
-	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, gkVolatilities, parkinsonVolatilities, localVolSurface, history, spread)
+	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities, localVolSurface, history, spread)
 
 	simulationFuncs := []struct {
 		name string
@@ -95,9 +95,8 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	result.VolatilityInfo = models.VolatilityInfo{
 		ShortLegVol:        shortLegVol,
 		LongLegVol:         longLegVol,
-		CombinedForwardVol: volatilities[2].Vol,
-		GarmanKlassVols:    gkVolatilities,
-		ParkinsonVols:      parkinsonVolatilities,
+		YangZhang:          yangzhangVolatilities,
+		RogersSatchel:      rogerssatchelVolatilities,
 		TotalAvgVolSurface: volatilities[len(volatilities)-1].Vol,
 		ShortLegImpliedVols: map[string]float64{
 			"Bid": spread.ShortLeg.Option.Greeks.BidIv,

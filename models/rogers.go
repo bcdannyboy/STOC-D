@@ -6,7 +6,7 @@ import (
 	"github.com/bcdannyboy/dquant/tradier"
 )
 
-func CalculateGarmanKlassVolatilities(history tradier.QuoteHistory) map[string]float64 {
+func CalculateRogersSatchellVolatility(history tradier.QuoteHistory) map[string]float64 {
 	results := make(map[string]float64)
 
 	periods := []struct {
@@ -21,7 +21,7 @@ func CalculateGarmanKlassVolatilities(history tradier.QuoteHistory) map[string]f
 
 	for _, period := range periods {
 		if len(history.History.Day) >= period.days {
-			if volatility := calculatePeriodGarmanKlass(history, period.days); volatility != 0 {
+			if volatility := calculatePeriodRogersSatchell(history, period.days); volatility != 0 {
 				results[period.name] = volatility
 			}
 		}
@@ -30,7 +30,7 @@ func CalculateGarmanKlassVolatilities(history tradier.QuoteHistory) map[string]f
 	return results
 }
 
-func calculatePeriodGarmanKlass(history tradier.QuoteHistory, days int) float64 {
+func calculatePeriodRogersSatchell(history tradier.QuoteHistory, days int) float64 {
 	if len(history.History.Day) < days {
 		return 0
 	}
@@ -48,10 +48,10 @@ func calculatePeriodGarmanKlass(history tradier.QuoteHistory, days int) float64 
 		closes[i] = day.Close
 	}
 
-	return calculateGarmanKlass(opens, highs, lows, closes)
+	return calculateRogersSatchell(opens, highs, lows, closes)
 }
 
-func calculateGarmanKlass(opens, highs, lows, closes []float64) float64 {
+func calculateRogersSatchell(opens, highs, lows, closes []float64) float64 {
 	n := len(opens)
 	if n == 0 || n != len(highs) || n != len(lows) || n != len(closes) {
 		return 0
@@ -59,9 +59,8 @@ func calculateGarmanKlass(opens, highs, lows, closes []float64) float64 {
 
 	sum := 0.0
 	for i := 0; i < n; i++ {
-		hl := 0.5 * math.Pow(math.Log(highs[i]/lows[i]), 2)
-		co := (2*math.Log(2) - 1) * math.Pow(math.Log(closes[i]/opens[i]), 2)
-		sum += hl - co
+		sum += math.Log(highs[i]/closes[i])*math.Log(highs[i]/opens[i]) +
+			math.Log(lows[i]/closes[i])*math.Log(lows[i]/opens[i])
 	}
 
 	// Annualize the volatility

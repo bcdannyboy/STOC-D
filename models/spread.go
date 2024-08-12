@@ -47,9 +47,8 @@ type GarmanKlassResult struct {
 type VolatilityInfo struct {
 	ShortLegVol         float64
 	LongLegVol          float64
-	CombinedForwardVol  float64
-	GarmanKlassVols     map[string]float64
-	ParkinsonVols       map[string]float64
+	YangZhang           map[string]float64
+	RogersSatchel       map[string]float64
 	TotalAvgVolSurface  float64
 	ShortLegImpliedVols map[string]float64
 	LongLegImpliedVols  map[string]float64

@@ -56,19 +56,21 @@ func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int
 		{Name: "LongLeg_MidIV", Vol: spread.LongLeg.Option.Greeks.MidIv},
 	}
 
-	for period, vol := range gkVolatilities {
-		volatilities = append(volatilities, VolType{Name: "GarmanKlassIV_" + period, Vol: vol})
+	yang_zhang := models.CalculateYangZhangVolatility(history)
+	rogers_satchell := models.CalculateRogersSatchellVolatility(history)
+
+	for period, vol := range yang_zhang {
+		volatilities = append(volatilities, VolType{Name: "YangZhangIV_" + period, Vol: vol})
+	}
+	for period, vol := range rogers_satchell {
+		volatilities = append(volatilities, VolType{Name: "RogersSatchellIV_" + period, Vol: vol})
 	}
 
-	avgGK := calculateAverage(gkVolatilities)
-	volatilities = append(volatilities, VolType{Name: "avg_GarmanKlassIV", Vol: avgGK})
+	avgYZ := calculateAverage(yang_zhang)
+	volatilities = append(volatilities, VolType{Name: "avg_YangZhangIV", Vol: avgYZ})
 
-	for period, vol := range parkinsonVolatilities {
-		volatilities = append(volatilities, VolType{Name: "ParkinsonVolatility_" + period, Vol: vol})
-	}
-
-	avgParkinson := calculateAverage(parkinsonVolatilities)
-	volatilities = append(volatilities, VolType{Name: "avg_ParkinsonVolatility", Vol: avgParkinson})
+	avgRS := calculateAverage(rogers_satchell)
+	volatilities = append(volatilities, VolType{Name: "avg_RogersSatchellIV", Vol: avgRS})
 
 	totalVolatilitySurface := calculateTotalAverageVolatilitySurface(localVolSurface, history)
 	volatilities = append(volatilities, VolType{Name: "total_avg_volatility_surface", Vol: totalVolatilitySurface})

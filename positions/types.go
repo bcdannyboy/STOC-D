@@ -6,13 +6,13 @@ import (
 )
 
 type job struct {
-	option1, option2      tradier.Option
-	underlyingPrice       float64
-	riskFreeRate          float64
-	gkVolatilities        map[string]float64
-	parkinsonVolatilities map[string]float64
-	localVolSurface       models.VolatilitySurface
-	daysToExpiration      int
+	option1, option2 tradier.Option
+	underlyingPrice  float64
+	riskFreeRate     float64
+	yzVolatilities   map[string]float64
+	rsVolatilities   map[string]float64
+	localVolSurface  models.VolatilitySurface
+	daysToExpiration int
 }
 type BSMResult struct {
 	Price             float64
