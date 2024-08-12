@@ -48,7 +48,6 @@ func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int
 	volatilities := []VolType{
 		{Name: "ShortLegVol", Vol: shortLegVol},
 		{Name: "LongLegVol", Vol: longLegVol},
-		{Name: "combined_forward_vol", Vol: math.Sqrt((shortLegVol*shortLegVol*float64(daysToExpiration)/365 + longLegVol*longLegVol*float64(daysToExpiration)/365) / 2)},
 		{Name: "ShortLeg_BidIV", Vol: spread.ShortLeg.Option.Greeks.BidIv},
 		{Name: "ShortLeg_AskIV", Vol: spread.ShortLeg.Option.Greeks.AskIv},
 		{Name: "ShortLeg_MidIV", Vol: spread.ShortLeg.Option.Greeks.MidIv},

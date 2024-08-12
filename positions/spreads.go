@@ -52,6 +52,43 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("\nProcessing complete. Total time: %v\n", time.Since(startTime))
 	fmt.Printf("Identified %d %s Spreads meeting criteria\n", len(spreads), spreadType)
 
+	for i, spread := range spreads {
+		fmt.Printf("\nSpread %d:\n", i+1)
+		fmt.Printf("  Short Leg: %s, Long Leg: %s\n", spread.Spread.ShortLeg.Option.Symbol, spread.Spread.LongLeg.Option.Symbol)
+		fmt.Printf("  Spread Credit: %.2f, ROR: %.2f%%\n", spread.Spread.SpreadCredit, spread.Spread.ROR*100)
+		fmt.Printf("  Probability of Profit: %.2f%%\n", spread.Probability.AverageProbability*100)
+
+		fmt.Printf("  Merton Model Parameters:\n")
+		fmt.Printf("    Lambda: %.4f, Mu: %.4f, Delta: %.4f\n", spread.MertonParams.Lambda, spread.MertonParams.Mu, spread.MertonParams.Delta)
+
+		fmt.Printf("  Kou Model Parameters:\n")
+		fmt.Printf("    Lambda: %.4f, P: %.4f, Eta1: %.4f, Eta2: %.4f\n", spread.KouParams.Lambda, spread.KouParams.P, spread.KouParams.Eta1, spread.KouParams.Eta2)
+
+		fmt.Printf("  Volatility Information:\n")
+		fmt.Printf("    Short Leg Vol: %.4f, Long Leg Vol: %.4f\n", spread.VolatilityInfo.ShortLegVol, spread.VolatilityInfo.LongLegVol)
+		fmt.Printf("    Total Avg Vol Surface: %.4f\n", spread.VolatilityInfo.TotalAvgVolSurface)
+
+		fmt.Printf("    Garman-Klass Volatilities:\n")
+		for period, vol := range spread.VolatilityInfo.GarmanKlassVols {
+			fmt.Printf("      %s: %.4f\n", period, vol)
+		}
+
+		fmt.Printf("    Parkinson Volatilities:\n")
+		for period, vol := range spread.VolatilityInfo.ParkinsonVols {
+			fmt.Printf("      %s: %.4f\n", period, vol)
+		}
+
+		fmt.Printf("    Short Leg Implied Vols:\n")
+		for type_, vol := range spread.VolatilityInfo.ShortLegImpliedVols {
+			fmt.Printf("      %s: %.4f\n", type_, vol)
+		}
+
+		fmt.Printf("    Long Leg Implied Vols:\n")
+		for type_, vol := range spread.VolatilityInfo.LongLegImpliedVols {
+			fmt.Printf("      %s: %.4f\n", type_, vol)
+		}
+	}
+
 	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
 	return spreads
 }
@@ -153,12 +190,9 @@ func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilitie
 
 		// Check ROR before running Monte Carlo simulation
 		if returnOnRisk >= minReturnOnRisk {
-			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.gkVolatilities, j.parkinsonVolatilities, j.localVolSurface, history)
-			resultChan <- models.SpreadWithProbabilities{
-				Spread:      spread,
-				Probability: probabilityResult,
-				MeetsRoR:    true,
-			}
+			spreadWithProb := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.gkVolatilities, j.parkinsonVolatilities, j.localVolSurface, history)
+			spreadWithProb.MeetsRoR = true
+			resultChan <- spreadWithProb
 		} else {
 			resultChan <- models.SpreadWithProbabilities{
 				Spread:   spread,

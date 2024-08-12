@@ -21,7 +21,7 @@ var rngPool = sync.Pool{
 	},
 }
 
-func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.ProbabilityResult {
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.SpreadWithProbabilities {
 	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, gkVolatilities, parkinsonVolatilities)
 
 	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, gkVolatilities, parkinsonVolatilities, localVolSurface, history, spread)
@@ -65,10 +65,53 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	wg.Wait()
 
 	averageProbability := calculateAverageProbability(results)
-	return models.ProbabilityResult{
-		AverageProbability: averageProbability,
-		Probabilities:      results,
+
+	result := models.SpreadWithProbabilities{
+		Spread: spread,
+		Probability: models.ProbabilityResult{
+			AverageProbability: averageProbability,
+			Probabilities:      results,
+		},
+		MeetsRoR: true,
 	}
+
+	// Calculate and store Merton parameters
+	historicalJumps := calculateHistoricalJumps(history)
+	merton := models.NewMertonJumpDiffusion(riskFreeRate, shortLegVol, 1.0, 0, shortLegVol)
+	merton.CalibrateJumpSizes(historicalJumps, 1)
+	result.MertonParams.Lambda = merton.Lambda
+	result.MertonParams.Mu = merton.Mu
+	result.MertonParams.Delta = merton.Delta
+
+	// Calculate and store Kou parameters
+	historicalPrices := extractHistoricalPrices(history)
+	kou := models.NewKouJumpDiffusion(riskFreeRate, shortLegVol, historicalPrices, 1.0/252.0)
+	result.KouParams.Lambda = kou.Lambda
+	result.KouParams.P = kou.P
+	result.KouParams.Eta1 = kou.Eta1
+	result.KouParams.Eta2 = kou.Eta2
+
+	// Store volatility information
+	result.VolatilityInfo = models.VolatilityInfo{
+		ShortLegVol:        shortLegVol,
+		LongLegVol:         longLegVol,
+		CombinedForwardVol: volatilities[2].Vol,
+		GarmanKlassVols:    gkVolatilities,
+		ParkinsonVols:      parkinsonVolatilities,
+		TotalAvgVolSurface: volatilities[len(volatilities)-1].Vol,
+		ShortLegImpliedVols: map[string]float64{
+			"Bid": spread.ShortLeg.Option.Greeks.BidIv,
+			"Ask": spread.ShortLeg.Option.Greeks.AskIv,
+			"Mid": spread.ShortLeg.Option.Greeks.MidIv,
+		},
+		LongLegImpliedVols: map[string]float64{
+			"Bid": spread.LongLeg.Option.Greeks.BidIv,
+			"Ask": spread.LongLeg.Option.Greeks.AskIv,
+			"Mid": spread.LongLeg.Option.Greeks.MidIv,
+		},
+	}
+
+	return result
 }
 
 func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory) map[string]float64 {

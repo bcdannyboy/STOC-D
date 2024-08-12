@@ -44,10 +44,34 @@ type GarmanKlassResult struct {
 	Volatility float64
 }
 
+type VolatilityInfo struct {
+	ShortLegVol         float64
+	LongLegVol          float64
+	CombinedForwardVol  float64
+	GarmanKlassVols     map[string]float64
+	ParkinsonVols       map[string]float64
+	TotalAvgVolSurface  float64
+	ShortLegImpliedVols map[string]float64
+	LongLegImpliedVols  map[string]float64
+}
+
+// Update SpreadWithProbabilities to use the new type
 type SpreadWithProbabilities struct {
-	Spread      OptionSpread
-	Probability ProbabilityResult
-	MeetsRoR    bool
+	Spread       OptionSpread
+	Probability  ProbabilityResult
+	MeetsRoR     bool
+	MertonParams struct {
+		Lambda float64
+		Mu     float64
+		Delta  float64
+	}
+	KouParams struct {
+		Lambda float64
+		P      float64
+		Eta1   float64
+		Eta2   float64
+	}
+	VolatilityInfo VolatilityInfo
 }
 
 type ProbabilityResult struct {
