@@ -11,7 +11,6 @@ type job struct {
 	riskFreeRate          float64
 	gkVolatilities        map[string]float64
 	parkinsonVolatilities map[string]float64
-	hestonParams          models.HestonParameters
 	localVolSurface       models.VolatilitySurface
 	daysToExpiration      int
 }
@@ -60,19 +59,8 @@ type OptionSpread struct {
 	ExtrinsicValue float64
 	IntrinsicValue float64
 	Greeks         BSMResult
-	ImpliedVol     SpreadImpliedVol
 	ShortFIV       float64
 	ROR            float64
-}
-
-type SpreadImpliedVol struct {
-	BidIV               float64
-	AskIV               float64
-	MidIV               float64
-	BSMIV               float64
-	GarmanKlassIV       float64
-	ParkinsonVolatility float64
-	ShortLegBSMIV       float64
 }
 
 type SpreadWithProbabilities struct {

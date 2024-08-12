@@ -33,8 +33,6 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	parkinsonVolatilities := models.CalculateParkinsonsVolatilities(history)
 	localVolSurface := models.CalculateLocalVolatilitySurface(chain, underlyingPrice)
 
-	hestonParams := calculateHestonParameters(history, underlyingPrice, riskFreeRate)
-
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 	fmt.Printf("Using %d CPUs\n", numCPU)
@@ -43,7 +41,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Total spreads to process: %d\n", totalJobs)
 
 	log.Printf("Starting processChainOptimized at %v", time.Now())
-	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, hestonParams, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
 	log.Printf("Finished processChainOptimized at %v", time.Now())
 
 	log.Printf("Sorting %d spreads by highest probability", len(spreads))
@@ -58,7 +56,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	return spreads
 }
 
-func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, hestonParams models.HestonParameters, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("processChainOptimized started at %v", startTime)
 
@@ -72,7 +70,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	}
 
 	go func() {
-		generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, hestonParams, localVolSurface, currentDate, spreadType, jobChan)
+		generateJobs(chain, underlyingPrice, riskFreeRate, gkVolatilities, parkinsonVolatilities, localVolSurface, currentDate, spreadType, jobChan)
 		close(jobChan)
 	}()
 
@@ -98,7 +96,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	return spreads
 }
 
-func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, hestonParams models.HestonParameters, localVolSurface models.VolatilitySurface, currentDate time.Time, spreadType string, jobQueue chan<- job) {
+func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, currentDate time.Time, spreadType string, jobQueue chan<- job) {
 	for exp_date, expiration := range chain {
 		options := filterOptions(expiration.Options.Option, spreadType)
 		if len(options) == 0 {
@@ -136,7 +134,6 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 					riskFreeRate:          riskFreeRate,
 					gkVolatilities:        gkVolatilities,
 					parkinsonVolatilities: parkinsonVolatilities,
-					hestonParams:          hestonParams,
 					localVolSurface:       localVolSurface,
 					daysToExpiration:      daysToExpiration,
 				}
@@ -156,7 +153,7 @@ func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilitie
 
 		// Check ROR before running Monte Carlo simulation
 		if returnOnRisk >= minReturnOnRisk {
-			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.gkVolatilities, j.parkinsonVolatilities, j.hestonParams, j.localVolSurface, history)
+			probabilityResult := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.gkVolatilities, j.parkinsonVolatilities, j.localVolSurface, history)
 			resultChan <- models.SpreadWithProbabilities{
 				Spread:      spread,
 				Probability: probabilityResult,
@@ -183,7 +180,6 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 
 	spreadBSMPrice := shortLeg.BSMResult.Price - longLeg.BSMResult.Price
 
-	spreadImpliedVol := calculateSpreadImpliedVol(shortLeg, longLeg, gkVolatility, parkinsonVolatility)
 	greeks := calculateSpreadGreeks(shortLeg, longLeg)
 
 	ror := calculateReturnOnRisk(models.OptionSpread{
@@ -194,7 +190,6 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 		SpreadBSMPrice: spreadBSMPrice,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
-		ImpliedVol:     spreadImpliedVol,
 		Greeks:         greeks,
 	})
 
@@ -206,7 +201,6 @@ func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskF
 		SpreadBSMPrice: spreadBSMPrice,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
-		ImpliedVol:     spreadImpliedVol,
 		Greeks:         greeks,
 		ROR:            ror,
 	}
@@ -246,39 +240,6 @@ func createSpreadLeg(option tradier.Option, underlyingPrice, riskFreeRate float6
 		MidImpliedVol:  option.Greeks.MidIv,
 		ExtrinsicValue: extrinsicValue,
 		IntrinsicValue: intrinsicValue,
-	}
-}
-
-func calculateSpreadImpliedVol(shortLeg, longLeg models.SpreadLeg, gkVolatility, parkinsonVolatility float64) models.SpreadImpliedVol {
-	shortVega := shortLeg.BSMResult.Vega
-	longVega := longLeg.BSMResult.Vega
-
-	combinedBidIV := (shortVega*shortLeg.Option.Greeks.BidIv + longVega*longLeg.Option.Greeks.BidIv) / (shortVega + longVega)
-	combinedAskIV := (shortVega*shortLeg.Option.Greeks.AskIv + longVega*longLeg.Option.Greeks.AskIv) / (shortVega + longVega)
-	combinedMidIV := (shortVega*shortLeg.Option.Greeks.MidIv + longVega*longLeg.Option.Greeks.MidIv) / (shortVega + longVega)
-	combinedBSMIV := (shortVega*shortLeg.BSMResult.ImpliedVolatility + longVega*longLeg.BSMResult.ImpliedVolatility) / (shortVega + longVega)
-
-	if combinedBidIV <= 0 {
-		combinedBidIV = shortLeg.Option.Greeks.BidIv
-	}
-	if combinedAskIV <= 0 {
-		combinedAskIV = shortLeg.Option.Greeks.AskIv
-	}
-	if combinedMidIV <= 0 {
-		combinedMidIV = shortLeg.Option.Greeks.MidIv
-	}
-	if combinedBSMIV <= 0 {
-		combinedBSMIV = shortLeg.BSMResult.ImpliedVolatility
-	}
-
-	return models.SpreadImpliedVol{
-		BidIV:               combinedBidIV,
-		AskIV:               combinedAskIV,
-		MidIV:               combinedMidIV,
-		BSMIV:               combinedBSMIV,
-		GarmanKlassIV:       gkVolatility,
-		ParkinsonVolatility: parkinsonVolatility,
-		ShortLegBSMIV:       shortLeg.BSMResult.ImpliedVolatility,
 	}
 }
 

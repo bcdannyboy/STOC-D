@@ -5,14 +5,13 @@ import (
 )
 
 type SpreadLeg struct {
-	Option            tradier.Option
-	BSMResult         BSMResult
-	GarmanKlassResult GarmanKlassResult
-	BidImpliedVol     float64
-	AskImpliedVol     float64
-	MidImpliedVol     float64
-	ExtrinsicValue    float64
-	IntrinsicValue    float64
+	Option         tradier.Option
+	BSMResult      BSMResult
+	BidImpliedVol  float64
+	AskImpliedVol  float64
+	MidImpliedVol  float64
+	ExtrinsicValue float64
+	IntrinsicValue float64
 }
 
 type OptionSpread struct {
@@ -24,7 +23,6 @@ type OptionSpread struct {
 	ExtrinsicValue float64
 	IntrinsicValue float64
 	Greeks         BSMResult
-	ImpliedVol     SpreadImpliedVol
 	ROR            float64
 }
 
@@ -46,16 +44,6 @@ type GarmanKlassResult struct {
 	Volatility float64
 }
 
-type SpreadImpliedVol struct {
-	BidIV               float64
-	AskIV               float64
-	MidIV               float64
-	BSMIV               float64
-	GarmanKlassIV       float64
-	ParkinsonVolatility float64
-	ShortLegBSMIV       float64
-}
-
 type SpreadWithProbabilities struct {
 	Spread      OptionSpread
 	Probability ProbabilityResult
@@ -63,9 +51,8 @@ type SpreadWithProbabilities struct {
 }
 
 type ProbabilityResult struct {
-	Probabilities           map[string]float64
-	AverageProbability      float64
-	FuzzyAverageProbability float64
+	Probabilities      map[string]float64
+	AverageProbability float64
 }
 
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {
@@ -77,10 +64,4 @@ func IsProfitable(spread OptionSpread, finalPrice float64) bool {
 	default:
 		return false
 	}
-}
-
-func CalculateAverageVolatility(spread OptionSpread) float64 {
-	return (spread.ImpliedVol.BidIV + spread.ImpliedVol.AskIV + spread.ImpliedVol.MidIV +
-		spread.ImpliedVol.BSMIV +
-		spread.ImpliedVol.ShortLegBSMIV + spread.ImpliedVol.GarmanKlassIV) / 6
 }
