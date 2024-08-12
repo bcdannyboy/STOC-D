@@ -36,6 +36,16 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	rsVolatilities := models.CalculateRogersSatchellVolatility(history)
 	localVolSurface := models.CalculateLocalVolatilitySurface(chain, underlyingPrice)
 
+	avgYZ := calculateAverageVolatility(yzVolatilities)
+	avgRS := calculateAverageVolatility(rsVolatilities)
+	avgIV := calculateAverageImpliedVolatility(chain)
+	avgVol := (avgYZ + avgRS + avgIV) / 3
+
+	fmt.Printf("Average Yang-Zhang Volatility: %.4f\n", avgYZ)
+	fmt.Printf("Average Rogers-Satchell Volatility: %.4f\n", avgRS)
+	fmt.Printf("Average Implied Volatility: %.4f\n", avgIV)
+	fmt.Printf("Average Volatility: %.4f\n", avgVol)
+
 	calibrateGlobalModels(history, chain, riskFreeRate, yzVolatilities, rsVolatilities)
 
 	numCPU := runtime.NumCPU()
@@ -46,7 +56,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Total spreads to process: %d\n", totalJobs)
 
 	log.Printf("Starting processChainOptimized at %v", time.Now())
-	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history)
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history, avgVol)
 	log.Printf("Finished processChainOptimized at %v", time.Now())
 
 	log.Printf("Sorting %d spreads by highest probability", len(spreads))
@@ -154,7 +164,7 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	fmt.Printf("Models calibrated\n")
 }
 
-func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory) []models.SpreadWithProbabilities {
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory, avgVol float64) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("processChainOptimized started at %v", startTime)
 
@@ -164,7 +174,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var wg sync.WaitGroup
 	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface, chain)
+		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface, chain, avgVol)
 	}
 
 	go func() {
@@ -240,7 +250,7 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 	}
 }
 
-func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface, chain map[string]*tradier.OptionChain) {
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface, chain map[string]*tradier.OptionChain, avgVol float64) {
 	defer wg.Done()
 	for j := range jobQueue {
 		gkVol := j.yzVolatilities[j.option1.ExpirationDate]
@@ -249,9 +259,8 @@ func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilitie
 		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, gkVol, parkinsonVol)
 		returnOnRisk := calculateReturnOnRisk(spread)
 
-		// Check ROR before running Monte Carlo simulation
 		if returnOnRisk >= minReturnOnRisk {
-			spreadWithProb := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.yzVolatilities, j.rsVolatilities, j.localVolSurface, history, chain, globalModels)
+			spreadWithProb := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.yzVolatilities, j.rsVolatilities, j.localVolSurface, history, chain, globalModels, avgVol)
 			spreadWithProb.MeetsRoR = true
 			resultChan <- spreadWithProb
 		} else {

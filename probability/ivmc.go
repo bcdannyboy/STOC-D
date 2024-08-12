@@ -26,10 +26,41 @@ type GlobalModels struct {
 	Kou    *models.KouJumpDiffusion
 }
 
-func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels) models.SpreadWithProbabilities {
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels, avgVol float64) models.SpreadWithProbabilities {
 	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities)
 
-	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities, localVolSurface, history, spread)
+	volatilities := []VolType{
+		{Name: "ShortLegVol", Vol: shortLegVol},
+		{Name: "LongLegVol", Vol: longLegVol},
+		{Name: "YZ_1m", Vol: yangzhangVolatilities["1m"]},
+		{Name: "YZ_3m", Vol: yangzhangVolatilities["3m"]},
+		{Name: "YZ_6m", Vol: yangzhangVolatilities["6m"]},
+		{Name: "YZ_1y", Vol: yangzhangVolatilities["1y"]},
+		{Name: "RS_1m", Vol: rogerssatchelVolatilities["1m"]},
+		{Name: "RS_3m", Vol: rogerssatchelVolatilities["3m"]},
+		{Name: "RS_6m", Vol: rogerssatchelVolatilities["6m"]},
+		{Name: "RS_1y", Vol: rogerssatchelVolatilities["1y"]},
+		{Name: "ShortLeg_AskIV", Vol: spread.ShortLeg.Option.Greeks.AskIv},
+		{Name: "ShortLeg_BidIV", Vol: spread.ShortLeg.Option.Greeks.BidIv},
+		{Name: "ShortLeg_MidIV", Vol: spread.ShortLeg.Option.Greeks.MidIv},
+		{Name: "ShortLeg_AvgIV", Vol: (spread.ShortLeg.Option.Greeks.AskIv + spread.ShortLeg.Option.Greeks.BidIv) / 2},
+		{Name: "LongLeg_AskIV", Vol: spread.LongLeg.Option.Greeks.AskIv},
+		{Name: "LongLeg_BidIV", Vol: spread.LongLeg.Option.Greeks.BidIv},
+		{Name: "LongLeg_MidIV", Vol: spread.LongLeg.Option.Greeks.MidIv},
+		{Name: "LongLeg_AvgIV", Vol: (spread.LongLeg.Option.Greeks.AskIv + spread.LongLeg.Option.Greeks.BidIv) / 2},
+		{Name: "YZ_avg", Vol: calculateAverage(yangzhangVolatilities)},
+		{Name: "RS_avg", Vol: calculateAverage(rogerssatchelVolatilities)},
+		{Name: "AvgYZ_RS", Vol: (calculateAverage(yangzhangVolatilities) + calculateAverage(rogerssatchelVolatilities)) / 2},
+		{Name: "TotalAvgVolSurface", Vol: avgVol},
+		{Name: "HestonModelVol", Vol: globalModels.Heston.V0},
+	}
+
+	totalAvg := 0.0
+	for _, vol := range volatilities {
+		totalAvg += vol.Vol
+	}
+	averageVol := totalAvg / float64(len(volatilities))
+	volatilities = append(volatilities, VolType{Name: "Complete_AvgVol", Vol: averageVol})
 
 	simulationFuncs := []struct {
 		name string
@@ -40,7 +71,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{name: "Heston", fn: simulateHeston},
 	}
 
-	results := make(map[string]float64, len(volatilities)*len(simulationFuncs)*5)
+	results := make(map[string]float64, len(volatilities)*len(simulationFuncs))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -81,7 +112,6 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		MeetsRoR: true,
 	}
 
-	// Store model parameters
 	result.MertonParams = models.MertonParams{
 		Lambda: globalModels.Merton.Lambda,
 		Mu:     globalModels.Merton.Mu,
@@ -103,13 +133,12 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		Rho:   globalModels.Heston.Rho,
 	}
 
-	// Store volatility information
 	result.VolatilityInfo = models.VolatilityInfo{
 		ShortLegVol:        shortLegVol,
 		LongLegVol:         longLegVol,
 		YangZhang:          yangzhangVolatilities,
 		RogersSatchel:      rogerssatchelVolatilities,
-		TotalAvgVolSurface: volatilities[len(volatilities)-1].Vol,
+		TotalAvgVolSurface: avgVol,
 		ShortLegImpliedVols: map[string]float64{
 			"Bid": spread.ShortLeg.Option.Greeks.BidIv,
 			"Ask": spread.ShortLeg.Option.Greeks.AskIv,
@@ -129,9 +158,8 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
 
-	// Use the global Merton model but update the volatility
 	merton := *globalModels.Merton // Create a copy of the global model
-	merton.Sigma = volatility      // Update the volatility for this specific spread
+	merton.Sigma = volatility      // Use the provided volatility
 
 	profitCount := 0
 
@@ -151,9 +179,8 @@ func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, ri
 func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
 
-	// Use the global Kou model but update the volatility
 	kou := *globalModels.Kou // Create a copy of the global model
-	kou.Sigma = volatility   // Update the volatility for this specific spread
+	kou.Sigma = volatility   // Use the provided volatility
 
 	prices := kou.SimulatePricesBatch(underlyingPrice, tau, timeSteps, numSimulations)
 
@@ -172,10 +199,9 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
 
-	// Use the global Heston model
 	heston := *globalModels.Heston // Create a copy of the global model
 
-	// Update the initial variance (V0) with the spread-specific volatility
+	// Update the initial variance (V0) with the provided volatility
 	heston.V0 = volatility * volatility
 
 	profitCount := 0
