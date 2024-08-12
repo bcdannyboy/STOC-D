@@ -49,7 +49,7 @@ func (m *MertonJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int, rn
 }
 
 func (m *MertonJumpDiffusion) OptionPrice(s0, k float64, t float64, isCall bool) float64 {
-	numSimulations := 100000
+	numSimulations := 1000
 	numWorkers := runtime.GOMAXPROCS(0)
 	simulationsPerWorker := numSimulations / numWorkers
 

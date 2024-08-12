@@ -87,6 +87,9 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 		for type_, vol := range spread.VolatilityInfo.LongLegImpliedVols {
 			fmt.Printf("      %s: %.4f\n", type_, vol)
 		}
+
+		fmt.Printf("  Heston Model Parameters:\n")
+		fmt.Printf("    V0: %.4f, Kappa: %.4f, Theta: %.4f, Xi: %.4f, Rho: %.4f\n", spread.HestonParams.V0, spread.HestonParams.Kappa, spread.HestonParams.Theta, spread.HestonParams.Xi, spread.HestonParams.Rho)
 	}
 
 	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
@@ -103,7 +106,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var wg sync.WaitGroup
 	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface)
+		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface, chain)
 	}
 
 	go func() {
@@ -179,7 +182,7 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 	}
 }
 
-func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface) {
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface, chain map[string]*tradier.OptionChain) {
 	defer wg.Done()
 	for j := range jobQueue {
 		gkVol := j.yzVolatilities[j.option1.ExpirationDate]
@@ -190,7 +193,7 @@ func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilitie
 
 		// Check ROR before running Monte Carlo simulation
 		if returnOnRisk >= minReturnOnRisk {
-			spreadWithProb := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.yzVolatilities, j.rsVolatilities, j.localVolSurface, history)
+			spreadWithProb := probability.MonteCarloSimulation(spread, j.underlyingPrice, j.riskFreeRate, j.daysToExpiration, j.yzVolatilities, j.rsVolatilities, j.localVolSurface, history, chain)
 			spreadWithProb.MeetsRoR = true
 			resultChan <- spreadWithProb
 		} else {

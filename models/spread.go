@@ -52,23 +52,30 @@ type VolatilityInfo struct {
 	TotalAvgVolSurface  float64
 	ShortLegImpliedVols map[string]float64
 	LongLegImpliedVols  map[string]float64
+	HestonVolatility    float64
 }
 
-// Update SpreadWithProbabilities to use the new type
 type SpreadWithProbabilities struct {
 	Spread       OptionSpread
 	Probability  ProbabilityResult
 	MeetsRoR     bool
 	MertonParams struct {
-		Lambda float64
-		Mu     float64
-		Delta  float64
+		Lambda float64 // Intensity of jumps
+		Mu     float64 // Drift of jumps
+		Delta  float64 // Volatility of jumps
 	}
 	KouParams struct {
-		Lambda float64
-		P      float64
-		Eta1   float64
-		Eta2   float64
+		Lambda float64 // Intensity of jumps
+		P      float64 // Probability of up jump
+		Eta1   float64 // Magnitude of up jump
+		Eta2   float64 // Magnitude of down jump
+	}
+	HestonParams struct {
+		V0    float64 // Initial variance
+		Kappa float64 // Mean reversion speed of variance
+		Theta float64 // Long-term variance
+		Xi    float64 // Volatility of variance
+		Rho   float64 // Correlation between asset returns and variance
 	}
 	VolatilityInfo VolatilityInfo
 }
@@ -76,6 +83,14 @@ type SpreadWithProbabilities struct {
 type ProbabilityResult struct {
 	Probabilities      map[string]float64
 	AverageProbability float64
+}
+
+type HestonParams struct {
+	V0    float64 // Initial variance
+	Kappa float64 // Mean reversion speed of variance
+	Theta float64 // Long-term variance
+	Xi    float64 // Volatility of variance
+	Rho   float64 // Correlation between asset returns and variance
 }
 
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {

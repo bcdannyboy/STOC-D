@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"golang.org/x/exp/rand"
+	"gonum.org/v1/gonum/optimize"
 )
 
 type HestonModel struct {
@@ -75,17 +76,77 @@ func (h *HestonModel) SimulatePricesBatch(s0, r, t float64, steps, numSimulation
 	return results
 }
 
-func (h *HestonModel) Calibrate(marketPrices []float64, strikes []float64, s0, r, t float64) error {
-	// Implement calibration logic here
-	// This could involve minimizing the difference between model prices and market prices
-	// You might use an optimization algorithm like Levenberg-Marquardt or Nelder-Mead
+type HestonCalibrationProblem struct {
+	MarketPrices []float64
+	Strikes      []float64
+	S0           float64
+	R            float64
+	T            float64
+}
 
-	// For now, we'll use placeholder values
-	h.V0 = 0.04
-	h.Kappa = 2
-	h.Theta = 0.04
-	h.Xi = 0.4
-	h.Rho = -0.5
+func (p *HestonCalibrationProblem) Evaluate(ind *HestonParams) (float64, error) {
+	return p.objectiveFunction([]float64{ind.V0, ind.Kappa, ind.Theta, ind.Xi, ind.Rho}), nil
+}
+
+func (p *HestonCalibrationProblem) objectiveFunction(x []float64) float64 {
+	model := NewHestonModel(x[0], x[1], x[2], x[3], x[4])
+	mse := 0.0
+
+	for i, strike := range p.Strikes {
+		modelPrice := model.CalculateOptionPrice(p.S0, strike, p.R, p.T)
+		mse += math.Pow(modelPrice-p.MarketPrices[i], 2)
+	}
+
+	return mse / float64(len(p.Strikes))
+}
+
+// CalculateOptionPrice calculates the option price using the Heston model
+func (h *HestonModel) CalculateOptionPrice(s0, k, r, t float64) float64 {
+	// Implement the Heston option pricing formula here
+	// You can use numerical integration or an approximation method
+	// For simplicity, we'll use a Monte Carlo simulation here
+	numSimulations := 1000
+	prices := h.SimulatePricesBatch(s0, r, t, 252, numSimulations)
+
+	sum := 0.0
+	for _, price := range prices {
+		sum += math.Max(price-k, 0)
+	}
+
+	return math.Exp(-r*t) * sum / float64(numSimulations)
+}
+
+func (h *HestonModel) Calibrate(marketPrices, strikes []float64, s0, r, t float64) error {
+	problem := optimize.Problem{
+		Func: func(x []float64) float64 {
+			h.V0 = x[0]
+			h.Kappa = x[1]
+			h.Theta = x[2]
+			h.Xi = x[3]
+			h.Rho = x[4]
+			return h.objectiveFunction(marketPrices, strikes, s0, r, t)
+		},
+	}
+
+	result, err := optimize.Minimize(problem, []float64{h.V0, h.Kappa, h.Theta, h.Xi, h.Rho}, nil, &optimize.NelderMead{})
+	if err != nil {
+		return err
+	}
+
+	h.V0 = result.X[0]
+	h.Kappa = result.X[1]
+	h.Theta = result.X[2]
+	h.Xi = result.X[3]
+	h.Rho = result.X[4]
 
 	return nil
+}
+
+func (h *HestonModel) objectiveFunction(marketPrices, strikes []float64, s0, r, t float64) float64 {
+	mse := 0.0
+	for i, strike := range strikes {
+		modelPrice := h.CalculateOptionPrice(s0, strike, r, t)
+		mse += math.Pow(modelPrice-marketPrices[i], 2)
+	}
+	return mse / float64(len(strikes))
 }

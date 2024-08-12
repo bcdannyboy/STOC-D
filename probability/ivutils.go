@@ -187,7 +187,7 @@ func calculateHestonVolatility(spread models.OptionSpread, history tradier.Quote
 	}
 
 	// Simulate prices using calibrated Heston model
-	numSimulations := 10000
+	numSimulations := 1000
 	var sumSquaredReturns float64
 	for i := 0; i < numSimulations; i++ {
 		finalPrice := heston.SimulatePrice(s0, r, t, 252) // 252 trading days in a year
@@ -198,4 +198,21 @@ func calculateHestonVolatility(spread models.OptionSpread, history tradier.Quote
 	// Calculate annualized volatility
 	hestonVol := math.Sqrt(sumSquaredReturns / float64(numSimulations) / t)
 	return hestonVol
+}
+
+func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
+	strikeSet := make(map[float64]struct{})
+
+	for _, expiration := range chain {
+		for _, option := range expiration.Options.Option {
+			strikeSet[option.Strike] = struct{}{}
+		}
+	}
+
+	strikes := make([]float64, 0, len(strikeSet))
+	for strike := range strikeSet {
+		strikes = append(strikes, strike)
+	}
+
+	return strikes
 }

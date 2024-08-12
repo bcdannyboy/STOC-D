@@ -1,6 +1,7 @@
 package probability
 
 import (
+	"math"
 	"sync"
 
 	"github.com/bcdannyboy/dquant/models"
@@ -20,7 +21,31 @@ var rngPool = sync.Pool{
 	},
 }
 
-func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.SpreadWithProbabilities {
+var globalHestonModel *models.HestonModel
+
+func calibrateGlobalHestonModel(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, riskFreeRate float64) {
+	if globalHestonModel != nil {
+		return // Model already calibrated
+	}
+
+	marketPrices := extractHistoricalPrices(history)
+	strikes := extractAllStrikes(chain)
+	s0 := marketPrices[len(marketPrices)-1]
+	t := 1.0 // Use 1 year as a default time to maturity
+
+	initialGuess := models.NewHestonModel(0.04, 2, 0.04, 0.4, -0.5)
+	err := initialGuess.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
+	if err != nil {
+		// Handle error, perhaps log it
+		globalHestonModel = initialGuess // Use initial guess if calibration fails
+	} else {
+		globalHestonModel = initialGuess
+	}
+}
+
+func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain) models.SpreadWithProbabilities {
+	calibrateGlobalHestonModel(history, chain, riskFreeRate)
+
 	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities)
 
 	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities, localVolSurface, history, spread)
@@ -91,6 +116,15 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	result.KouParams.Eta1 = kou.Eta1
 	result.KouParams.Eta2 = kou.Eta2
 
+	hestonModel, hestonVol := calculateHestonModel(spread, history, underlyingPrice, riskFreeRate, float64(daysToExpiration)/365.0)
+	result.HestonParams = models.HestonParams{
+		V0:    hestonModel.V0,
+		Kappa: hestonModel.Kappa,
+		Theta: hestonModel.Theta,
+		Xi:    hestonModel.Xi,
+		Rho:   hestonModel.Rho,
+	}
+
 	// Store volatility information
 	result.VolatilityInfo = models.VolatilityInfo{
 		ShortLegVol:        shortLegVol,
@@ -108,6 +142,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 			"Ask": spread.LongLeg.Option.Greeks.AskIv,
 			"Mid": spread.LongLeg.Option.Greeks.MidIv,
 		},
+		HestonVolatility: hestonVol,
 	}
 
 	return result
@@ -205,19 +240,8 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
 
-	// Create and calibrate Heston model
-	heston := models.NewHestonModel(volatility*volatility, 2, volatility*volatility, 0.4, -0.5) // Initial guess
-	marketPrices := []float64{}
-	strikes := []float64{spread.ShortLeg.Option.Strike, spread.LongLeg.Option.Strike}
-	for _, day := range history.History.Day {
-		marketPrices = append(marketPrices, day.Close)
-	}
-
-	err := heston.Calibrate(marketPrices, strikes, underlyingPrice, riskFreeRate, tau)
-	if err != nil {
-		// Handle calibration error
-		return map[string]float64{"error": 1.0}
-	}
+	// Use the global Heston model instead of creating a new one
+	heston := globalHestonModel
 
 	profitCount := 0
 
@@ -232,4 +256,22 @@ func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, v
 	return map[string]float64{
 		"probability": float64(profitCount) / float64(numSimulations),
 	}
+}
+
+func calculateHestonModel(spread models.OptionSpread, history tradier.QuoteHistory, s0, r, t float64) (*models.HestonModel, float64) {
+	// Use the global Heston model
+	heston := globalHestonModel
+
+	// Simulate prices using calibrated Heston model to estimate volatility
+	numSimulations := 1000
+	var sumSquaredReturns float64
+	for i := 0; i < numSimulations; i++ {
+		finalPrice := heston.SimulatePrice(s0, r, t, 252) // 252 trading days in a year
+		logReturn := math.Log(finalPrice / s0)
+		sumSquaredReturns += logReturn * logReturn
+	}
+
+	// Calculate annualized volatility
+	hestonVol := math.Sqrt(sumSquaredReturns / float64(numSimulations) / t)
+	return heston, hestonVol
 }
