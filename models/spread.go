@@ -93,6 +93,19 @@ type HestonParams struct {
 	Rho   float64 // Correlation between asset returns and variance
 }
 
+type MertonParams struct {
+	Lambda float64 // Intensity of jumps
+	Mu     float64 // Drift of jumps
+	Delta  float64 // Volatility of jumps
+}
+
+type KouParams struct {
+	Lambda float64 // Intensity of jumps
+	P      float64 // Probability of up jump
+	Eta1   float64 // Magnitude of up jump
+	Eta2   float64 // Magnitude of down jump
+}
+
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {
 	switch spread.SpreadType {
 	case "Bull Put":
