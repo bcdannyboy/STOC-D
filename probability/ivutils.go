@@ -44,11 +44,17 @@ func incorporateOptionIVs(baseVol float64, option tradier.Option) float64 {
 	return totalVol / count
 }
 
-func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) []VolType {
+func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, spread models.OptionSpread) []VolType {
 	volatilities := []VolType{
 		{Name: "ShortLegVol", Vol: shortLegVol},
 		{Name: "LongLegVol", Vol: longLegVol},
 		{Name: "combined_forward_vol", Vol: math.Sqrt((shortLegVol*shortLegVol*float64(daysToExpiration)/365 + longLegVol*longLegVol*float64(daysToExpiration)/365) / 2)},
+		{Name: "ShortLeg_BidIV", Vol: spread.ShortLeg.Option.Greeks.BidIv},
+		{Name: "ShortLeg_AskIV", Vol: spread.ShortLeg.Option.Greeks.AskIv},
+		{Name: "ShortLeg_MidIV", Vol: spread.ShortLeg.Option.Greeks.MidIv},
+		{Name: "LongLeg_BidIV", Vol: spread.LongLeg.Option.Greeks.BidIv},
+		{Name: "LongLeg_AskIV", Vol: spread.LongLeg.Option.Greeks.AskIv},
+		{Name: "LongLeg_MidIV", Vol: spread.LongLeg.Option.Greeks.MidIv},
 	}
 
 	for period, vol := range gkVolatilities {
