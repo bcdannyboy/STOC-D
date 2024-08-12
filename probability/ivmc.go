@@ -2,7 +2,6 @@ package probability
 
 import (
 	"sync"
-	"time"
 
 	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/tradier"
@@ -17,7 +16,7 @@ const (
 
 var rngPool = sync.Pool{
 	New: func() interface{} {
-		return rand.New(rand.NewSource(uint64(time.Now().UnixNano())))
+		return rand.New(rand.NewSource(uint64(rand.Int63())))
 	},
 }
 
@@ -30,8 +29,9 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		name string
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory) map[string]float64
 	}{
-		{name: "MertonJD", fn: simulateMertonJumpDiffusion},
-		{name: "KouJD", fn: simulateKouJumpDiffusion},
+		{name: "Merton", fn: simulateMertonJumpDiffusion},
+		{name: "Kou", fn: simulateKouJumpDiffusion},
+		{name: "Heston", fn: simulateHeston},
 	}
 
 	results := make(map[string]float64, len(volatilities)*len(simulationFuncs)*5)
@@ -173,22 +173,23 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 	kou2x := models.NewKouJumpDiffusion(riskFreeRate, volatility, scaleHistoricalPrices(historicalPrices, 2), timeStep)
 	kou3x := models.NewKouJumpDiffusion(riskFreeRate, volatility, scaleHistoricalPrices(historicalPrices, 3), timeStep)
 
+	// Simulate prices using the batch method
+	prices1x := kou1x.SimulatePricesBatch(underlyingPrice, tau, timeSteps, numSimulations)
+	prices2x := kou2x.SimulatePricesBatch(underlyingPrice, tau, timeSteps, numSimulations)
+	prices3x := kou3x.SimulatePricesBatch(underlyingPrice, tau, timeSteps, numSimulations)
+
 	profitCount1x := 0
 	profitCount2x := 0
 	profitCount3x := 0
 
 	for i := 0; i < numSimulations; i++ {
-		finalPrice1 := kou1x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
-		finalPrice2 := kou2x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
-		finalPrice3 := kou3x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
-
-		if models.IsProfitable(spread, finalPrice1) {
+		if models.IsProfitable(spread, prices1x[i]) {
 			profitCount1x++
 		}
-		if models.IsProfitable(spread, finalPrice2) {
+		if models.IsProfitable(spread, prices2x[i]) {
 			profitCount2x++
 		}
-		if models.IsProfitable(spread, finalPrice3) {
+		if models.IsProfitable(spread, prices3x[i]) {
 			profitCount3x++
 		}
 	}
@@ -198,5 +199,37 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 		"2x":  float64(profitCount2x) / float64(numSimulations),
 		"3x":  float64(profitCount3x) / float64(numSimulations),
 		"avg": (float64(profitCount1x) + float64(profitCount2x) + float64(profitCount3x)) / (3 * float64(numSimulations)),
+	}
+}
+
+func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory) map[string]float64 {
+	tau := float64(daysToExpiration) / 365.0
+
+	// Create and calibrate Heston model
+	heston := models.NewHestonModel(volatility*volatility, 2, volatility*volatility, 0.4, -0.5) // Initial guess
+	marketPrices := []float64{}
+	strikes := []float64{spread.ShortLeg.Option.Strike, spread.LongLeg.Option.Strike}
+	for _, day := range history.History.Day {
+		marketPrices = append(marketPrices, day.Close)
+	}
+
+	err := heston.Calibrate(marketPrices, strikes, underlyingPrice, riskFreeRate, tau)
+	if err != nil {
+		// Handle calibration error
+		return map[string]float64{"error": 1.0}
+	}
+
+	profitCount := 0
+
+	for i := 0; i < numSimulations; i++ {
+		finalPrice := heston.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps)
+
+		if models.IsProfitable(spread, finalPrice) {
+			profitCount++
+		}
+	}
+
+	return map[string]float64{
+		"probability": float64(profitCount) / float64(numSimulations),
 	}
 }

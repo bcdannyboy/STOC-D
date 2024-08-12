@@ -75,6 +75,9 @@ func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int
 	totalVolatilitySurface := calculateTotalAverageVolatilitySurface(localVolSurface, history)
 	volatilities = append(volatilities, VolType{Name: "total_avg_volatility_surface", Vol: totalVolatilitySurface})
 
+	hestonVol := calculateHestonVolatility(spread, history)
+	volatilities = append(volatilities, VolType{Name: "HestonModelVol", Vol: hestonVol})
+
 	return volatilities
 }
 
@@ -152,4 +155,47 @@ func scaleHistoricalPrices(prices []float64, factor float64) []float64 {
 		}
 	}
 	return scaledPrices
+}
+
+func calculateHestonVolatility(spread models.OptionSpread, history tradier.QuoteHistory) float64 {
+	// Extract necessary data for calibration
+	marketPrices := []float64{}
+	strikes := []float64{}
+	for _, day := range history.History.Day {
+		marketPrices = append(marketPrices, day.Close)
+	}
+	strikes = append(strikes, spread.ShortLeg.Option.Strike, spread.LongLeg.Option.Strike)
+
+	// Create and calibrate Heston model
+	heston := models.NewHestonModel(0.04, 2, 0.04, 0.4, -0.5) // Initial guess
+	s0 := marketPrices[len(marketPrices)-1]                   // Use last price as current price
+	r := 0.02                                                 // Risk-free rate (placeholder)
+
+	// Parse the expiration date string into a time.Time object
+	expirationDate, err := time.Parse("2006-01-02", spread.ShortLeg.Option.ExpirationDate)
+	if err != nil {
+		// Handle parsing error
+		return 0.0
+	}
+
+	t := expirationDate.Sub(time.Now()).Hours() / 24 / 365 // Time to expiration in years
+
+	err = heston.Calibrate(marketPrices, strikes, s0, r, t)
+	if err != nil {
+		// Handle calibration error
+		return 0.0
+	}
+
+	// Simulate prices using calibrated Heston model
+	numSimulations := 10000
+	var sumSquaredReturns float64
+	for i := 0; i < numSimulations; i++ {
+		finalPrice := heston.SimulatePrice(s0, r, t, 252) // 252 trading days in a year
+		logReturn := math.Log(finalPrice / s0)
+		sumSquaredReturns += logReturn * logReturn
+	}
+
+	// Calculate annualized volatility
+	hestonVol := math.Sqrt(sumSquaredReturns / float64(numSimulations) / t)
+	return hestonVol
 }

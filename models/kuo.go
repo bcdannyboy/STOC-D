@@ -2,6 +2,8 @@ package models
 
 import (
 	"math"
+	"runtime"
+	"sync"
 
 	"golang.org/x/exp/rand"
 )
@@ -14,6 +16,12 @@ type KouJumpDiffusion struct {
 	P      float64 // Probability of upward jump
 	Eta1   float64 // Rate of upward jump
 	Eta2   float64 // Rate of downward jump
+}
+
+var krngPool = sync.Pool{
+	New: func() interface{} {
+		return rand.New(rand.NewSource(uint64(rand.Int63())))
+	},
 }
 
 // NewKouJumpDiffusion creates a new Kou jump diffusion model
@@ -112,9 +120,12 @@ func calculateStdDeviation(values []float64, mean float64) float64 {
 }
 
 // SimulatePrice simulates the price path using the Kou jump diffusion model
-func (k *KouJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int, rng *rand.Rand) float64 {
+func (k *KouJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int) float64 {
 	dt := t / float64(steps)
 	price := s0
+
+	rng := krngPool.Get().(*rand.Rand)
+	defer krngPool.Put(rng)
 
 	for i := 0; i < steps; i++ {
 		z := rng.NormFloat64()
@@ -137,20 +148,62 @@ func (k *KouJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int, rng *
 	return price
 }
 
+// SimulatePricesBatch simulates multiple price paths in parallel
+func (k *KouJumpDiffusion) SimulatePricesBatch(s0, t float64, steps, numSimulations int) []float64 {
+	results := make([]float64, numSimulations)
+	var wg sync.WaitGroup
+	numWorkers := runtime.GOMAXPROCS(0)
+	simulationsPerWorker := numSimulations / numWorkers
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			for j := start; j < start+simulationsPerWorker; j++ {
+				results[j] = k.SimulatePrice(s0, t, steps)
+			}
+		}(i * simulationsPerWorker)
+	}
+
+	wg.Wait()
+	return results
+}
+
 // OptionPrice calculates the option price using Monte Carlo simulation
 func (k *KouJumpDiffusion) OptionPrice(s0, strike float64, t float64, isCall bool, numSimulations int) float64 {
-	totalPayoff := 0.0
+	simulatedPrices := k.SimulatePricesBatch(s0, t, 252, numSimulations)
 
-	for i := 0; i < numSimulations; i++ {
-		sT := k.SimulatePrice(s0, t, 252, rand.New(rand.NewSource(uint64(i))))
-		var payoff float64
-		if isCall {
-			payoff = math.Max(sT-strike, 0)
-		} else {
-			payoff = math.Max(strike-sT, 0)
-		}
-		totalPayoff += payoff
+	var totalPayoff float64
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	numWorkers := runtime.GOMAXPROCS(0)
+	simulationsPerWorker := numSimulations / numWorkers
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			localPayoff := 0.0
+
+			for j := start; j < start+simulationsPerWorker; j++ {
+				sT := simulatedPrices[j]
+				var payoff float64
+				if isCall {
+					payoff = math.Max(sT-strike, 0)
+				} else {
+					payoff = math.Max(strike-sT, 0)
+				}
+				localPayoff += payoff
+			}
+
+			mu.Lock()
+			totalPayoff += localPayoff
+			mu.Unlock()
+		}(i * simulationsPerWorker)
 	}
+
+	wg.Wait()
 
 	price := totalPayoff / float64(numSimulations)
 	price *= math.Exp(-k.R * t)
