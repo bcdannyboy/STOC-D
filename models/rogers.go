@@ -13,10 +13,10 @@ func CalculateRogersSatchellVolatility(history tradier.QuoteHistory) map[string]
 		name string
 		days int
 	}{
-		{"1w", 5},
 		{"1m", 21},
 		{"3m", 63},
 		{"6m", 126},
+		{"1y", 252},
 	}
 
 	for _, period := range periods {
