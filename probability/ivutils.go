@@ -9,51 +9,48 @@ import (
 )
 
 func confirmVolatilities(spread models.OptionSpread, localVolSurface models.VolatilitySurface, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64) (float64, float64) {
-	// Convert ExpirationDate strings to time.Time and calculate time to expiry
 	shortLegExpiration, _ := time.Parse("2006-01-02", spread.ShortLeg.Option.ExpirationDate)
 	longLegExpiration, _ := time.Parse("2006-01-02", spread.LongLeg.Option.ExpirationDate)
 
 	shortTimeToExpiry := shortLegExpiration.Sub(time.Now()).Hours() / 24 / 365
 	longTimeToExpiry := longLegExpiration.Sub(time.Now()).Hours() / 24 / 365
 
-	// Use the local volatility surface to get the volatilities for the strikes and dates in the spread
 	shortLegVol := interpolateVolatilityFromSurface(localVolSurface, spread.ShortLeg.Option.Strike, shortTimeToExpiry)
 	longLegVol := interpolateVolatilityFromSurface(localVolSurface, spread.LongLeg.Option.Strike, longTimeToExpiry)
 
-	// Incorporate bid, ask, and mid IVs from the leg options
-	if spread.ShortLeg.Option.Greeks.BidIv > 0 {
-		shortLegVol = (shortLegVol + spread.ShortLeg.Option.Greeks.BidIv) / 2
-	}
-	if spread.ShortLeg.Option.Greeks.AskIv > 0 {
-		shortLegVol = (shortLegVol + spread.ShortLeg.Option.Greeks.AskIv) / 2
-	}
-	if spread.ShortLeg.Option.Greeks.MidIv > 0 {
-		shortLegVol = (shortLegVol + spread.ShortLeg.Option.Greeks.MidIv) / 2
-	}
-
-	if spread.LongLeg.Option.Greeks.BidIv > 0 {
-		longLegVol = (longLegVol + spread.LongLeg.Option.Greeks.BidIv) / 2
-	}
-	if spread.LongLeg.Option.Greeks.AskIv > 0 {
-		longLegVol = (longLegVol + spread.LongLeg.Option.Greeks.AskIv) / 2
-	}
-	if spread.LongLeg.Option.Greeks.MidIv > 0 {
-		longLegVol = (longLegVol + spread.LongLeg.Option.Greeks.MidIv) / 2
-	}
+	shortLegVol = incorporateOptionIVs(shortLegVol, spread.ShortLeg.Option)
+	longLegVol = incorporateOptionIVs(longLegVol, spread.LongLeg.Option)
 
 	return shortLegVol, longLegVol
 }
 
+func incorporateOptionIVs(baseVol float64, option tradier.Option) float64 {
+	count := 1.0
+	totalVol := baseVol
+
+	if option.Greeks.BidIv > 0 {
+		totalVol += option.Greeks.BidIv
+		count++
+	}
+	if option.Greeks.AskIv > 0 {
+		totalVol += option.Greeks.AskIv
+		count++
+	}
+	if option.Greeks.MidIv > 0 {
+		totalVol += option.Greeks.MidIv
+		count++
+	}
+
+	return totalVol / count
+}
+
 func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) []VolType {
-	volatilities := []VolType{}
+	volatilities := []VolType{
+		{Name: "ShortLegVol", Vol: shortLegVol},
+		{Name: "LongLegVol", Vol: longLegVol},
+		{Name: "combined_forward_vol", Vol: math.Sqrt((shortLegVol*shortLegVol*float64(daysToExpiration)/365 + longLegVol*longLegVol*float64(daysToExpiration)/365) / 2)},
+	}
 
-	volatilities = append(volatilities, VolType{Name: "ShortLegVol", Vol: shortLegVol})
-
-	volatilities = append(volatilities, VolType{Name: "LongLegVol", Vol: longLegVol})
-
-	volatilities = append(volatilities, VolType{Name: "combined_forward_vol", Vol: math.Sqrt((shortLegVol*shortLegVol*float64(daysToExpiration)/365 + longLegVol*longLegVol*float64(daysToExpiration)/365) / 2)})
-
-	// Include Garman-Klass and Parkinson volatilities
 	for period, vol := range gkVolatilities {
 		volatilities = append(volatilities, VolType{Name: "GarmanKlassIV_" + period, Vol: vol})
 	}
@@ -68,7 +65,6 @@ func calculateVolatilities(shortLegVol, longLegVol float64, daysToExpiration int
 	avgParkinson := calculateAverage(parkinsonVolatilities)
 	volatilities = append(volatilities, VolType{Name: "avg_ParkinsonVolatility", Vol: avgParkinson})
 
-	// Calculate total average volatility surface ignoring positions with no volume or no volatility
 	totalVolatilitySurface := calculateTotalAverageVolatilitySurface(localVolSurface, history)
 	volatilities = append(volatilities, VolType{Name: "total_avg_volatility_surface", Vol: totalVolatilitySurface})
 
@@ -85,7 +81,6 @@ func calculateTotalAverageVolatilitySurface(surface models.VolatilitySurface, hi
 
 	for _, volList := range surface.Vols {
 		for i, vol := range volList {
-			// Ignore positions with no volume or no volatility
 			if vol == 0 || history.History.Day[i].Volume == 0 {
 				continue
 			}
@@ -117,4 +112,15 @@ func calculateAverage(volatilities map[string]float64) float64 {
 		total += vol
 	}
 	return total / float64(len(volatilities))
+}
+
+func calculateHistoricalJumps(history tradier.QuoteHistory) []float64 {
+	jumps := []float64{}
+	for i := 1; i < len(history.History.Day); i++ {
+		prevClose := history.History.Day[i-1].Close
+		currOpen := history.History.Day[i].Open
+		jump := math.Log(currOpen / prevClose)
+		jumps = append(jumps, jump)
+	}
+	return jumps
 }

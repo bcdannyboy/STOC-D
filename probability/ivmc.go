@@ -1,14 +1,12 @@
 package probability
 
 import (
-	"math"
 	"sync"
 	"time"
 
 	"github.com/bcdannyboy/dquant/models"
 	"github.com/bcdannyboy/dquant/tradier"
 	"golang.org/x/exp/rand"
-	"gonum.org/v1/gonum/stat/distuv"
 )
 
 const (
@@ -26,26 +24,27 @@ var rngPool = sync.Pool{
 func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory) models.ProbabilityResult {
 	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, gkVolatilities, parkinsonVolatilities)
 
-	// Append volatilities calculated from the legs
 	volatilities := calculateVolatilities(shortLegVol, longLegVol, daysToExpiration, gkVolatilities, parkinsonVolatilities, localVolSurface, history)
 
 	simulationFuncs := []struct {
 		name string
-		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand) float64
+		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, []float64) map[string]float64
 	}{
-		{name: "StudentT", fn: simulateStudentT},
+		{name: "MertonJD", fn: simulateMertonJumpDiffusion},
 	}
 
-	results := make(map[string]float64, len(volatilities)*len(simulationFuncs)*3)
+	results := make(map[string]float64, len(volatilities)*len(simulationFuncs)*5)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
 	semaphore := make(chan struct{}, numWorkers)
 
+	historicalJumps := calculateHistoricalJumps(history)
+
 	for _, vol := range volatilities {
 		for _, simFunc := range simulationFuncs {
 			wg.Add(1)
-			go func(volName, simName string, volatility float64, simFunc func(models.OptionSpread, float64, float64, float64, int, *rand.Rand) float64) {
+			go func(volName, simName string, volatility float64, simFunc func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, []float64) map[string]float64) {
 				defer wg.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
@@ -53,10 +52,12 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 				rng := rngPool.Get().(*rand.Rand)
 				defer rngPool.Put(rng)
 
-				prob := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng)
+				probMap := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, historicalJumps)
 
 				mu.Lock()
-				results[volName+"_"+simName] = prob
+				for key, value := range probMap {
+					results[volName+"_"+simName+"_"+key] = value
+				}
 				mu.Unlock()
 			}(vol.Name, simFunc.name, vol.Vol, simFunc.fn)
 		}
@@ -71,22 +72,45 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	}
 }
 
-func simulateStudentT(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand) float64 {
-	studentT := distuv.StudentsT{Nu: 5, Mu: 0, Sigma: 1, Src: rng}
-	return simulateWithDistribution(spread, underlyingPrice, riskFreeRate, daysToExpiration, volatility, studentT.Rand)
-}
+func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, historicalJumps []float64) map[string]float64 {
+	tau := float64(daysToExpiration) / 365.0
 
-func simulateWithDistribution(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, volatility float64, randFunc func() float64) float64 {
-	sqrtT := math.Sqrt(float64(daysToExpiration) / 252.0)
-	expTerm := math.Exp((riskFreeRate - 0.5*volatility*volatility) * float64(daysToExpiration) / 252.0)
+	// Estimate jump parameters
+	lambda := 1.0 // Assuming on average 1 jump per year, adjust as needed
 
-	profitCount := 0
+	// Create three Merton models with different jump size calibrations
+	merton1x := models.NewMertonJumpDiffusion(riskFreeRate, volatility, lambda, 0, volatility)
+	merton2x := models.NewMertonJumpDiffusion(riskFreeRate, volatility, lambda, 0, volatility)
+	merton3x := models.NewMertonJumpDiffusion(riskFreeRate, volatility, lambda, 0, volatility)
+
+	merton1x.CalibrateJumpSizes(historicalJumps, 1)
+	merton2x.CalibrateJumpSizes(historicalJumps, 2)
+	merton3x.CalibrateJumpSizes(historicalJumps, 3)
+
+	profitCount1x := 0
+	profitCount2x := 0
+	profitCount3x := 0
+
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := underlyingPrice * expTerm * math.Exp(volatility*sqrtT*randFunc())
-		if models.IsProfitable(spread, finalPrice) {
-			profitCount++
+		finalPrice1 := merton1x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
+		finalPrice2 := merton2x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
+		finalPrice3 := merton3x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
+
+		if models.IsProfitable(spread, finalPrice1) {
+			profitCount1x++
+		}
+		if models.IsProfitable(spread, finalPrice2) {
+			profitCount2x++
+		}
+		if models.IsProfitable(spread, finalPrice3) {
+			profitCount3x++
 		}
 	}
 
-	return float64(profitCount) / float64(numSimulations)
+	return map[string]float64{
+		"1x":  float64(profitCount1x) / float64(numSimulations),
+		"2x":  float64(profitCount2x) / float64(numSimulations),
+		"3x":  float64(profitCount3x) / float64(numSimulations),
+		"avg": (float64(profitCount1x) + float64(profitCount2x) + float64(profitCount3x)) / (3 * float64(numSimulations)),
+	}
 }
