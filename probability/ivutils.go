@@ -130,3 +130,25 @@ func calculateHistoricalJumps(history tradier.QuoteHistory) []float64 {
 	}
 	return jumps
 }
+
+func extractHistoricalPrices(history tradier.QuoteHistory) []float64 {
+	prices := make([]float64, len(history.History.Day))
+	for i, day := range history.History.Day {
+		prices[i] = day.Close
+	}
+	return prices
+}
+
+func scaleHistoricalPrices(prices []float64, factor float64) []float64 {
+	scaledPrices := make([]float64, len(prices))
+	for i, price := range prices {
+		if i == 0 {
+			scaledPrices[i] = price
+		} else {
+			returnRate := math.Log(price / prices[i-1])
+			scaledReturn := returnRate * factor
+			scaledPrices[i] = scaledPrices[i-1] * math.Exp(scaledReturn)
+		}
+	}
+	return scaledPrices
+}

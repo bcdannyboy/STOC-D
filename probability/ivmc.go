@@ -28,9 +28,10 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 
 	simulationFuncs := []struct {
 		name string
-		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, []float64) map[string]float64
+		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory) map[string]float64
 	}{
 		{name: "MertonJD", fn: simulateMertonJumpDiffusion},
+		{name: "KouJD", fn: simulateKouJumpDiffusion},
 	}
 
 	results := make(map[string]float64, len(volatilities)*len(simulationFuncs)*5)
@@ -39,12 +40,10 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 
 	semaphore := make(chan struct{}, numWorkers)
 
-	historicalJumps := calculateHistoricalJumps(history)
-
 	for _, vol := range volatilities {
 		for _, simFunc := range simulationFuncs {
 			wg.Add(1)
-			go func(volName, simName string, volatility float64, simFunc func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, []float64) map[string]float64) {
+			go func(volName, simName string, volatility float64, simFunc func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory) map[string]float64) {
 				defer wg.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
@@ -52,7 +51,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 				rng := rngPool.Get().(*rand.Rand)
 				defer rngPool.Put(rng)
 
-				probMap := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, historicalJumps)
+				probMap := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, history)
 
 				mu.Lock()
 				for key, value := range probMap {
@@ -72,8 +71,11 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	}
 }
 
-func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, historicalJumps []float64) map[string]float64 {
+func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
+
+	// Extract historical jumps from the QuoteHistory
+	historicalJumps := calculateHistoricalJumps(history)
 
 	// Estimate jump parameters
 	lambda := 1.0 // Assuming on average 1 jump per year, adjust as needed
@@ -92,9 +94,51 @@ func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, ri
 	profitCount3x := 0
 
 	for i := 0; i < numSimulations; i++ {
-		finalPrice1 := merton1x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
-		finalPrice2 := merton2x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
-		finalPrice3 := merton3x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.New().(*rand.Rand))
+		finalPrice1 := merton1x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
+		finalPrice2 := merton2x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
+		finalPrice3 := merton3x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
+
+		if models.IsProfitable(spread, finalPrice1) {
+			profitCount1x++
+		}
+		if models.IsProfitable(spread, finalPrice2) {
+			profitCount2x++
+		}
+		if models.IsProfitable(spread, finalPrice3) {
+			profitCount3x++
+		}
+	}
+
+	return map[string]float64{
+		"1x":  float64(profitCount1x) / float64(numSimulations),
+		"2x":  float64(profitCount2x) / float64(numSimulations),
+		"3x":  float64(profitCount3x) / float64(numSimulations),
+		"avg": (float64(profitCount1x) + float64(profitCount2x) + float64(profitCount3x)) / (3 * float64(numSimulations)),
+	}
+}
+
+func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory) map[string]float64 {
+	tau := float64(daysToExpiration) / 365.0
+
+	// Extract historical prices from the QuoteHistory
+	historicalPrices := extractHistoricalPrices(history)
+
+	// Calculate time step based on the historical data
+	timeStep := 1.0 / 252.0 // Assuming daily data, adjust if necessary
+
+	// Create three Kou models with different parameter calibrations
+	kou1x := models.NewKouJumpDiffusion(riskFreeRate, volatility, historicalPrices, timeStep)
+	kou2x := models.NewKouJumpDiffusion(riskFreeRate, volatility, scaleHistoricalPrices(historicalPrices, 2), timeStep)
+	kou3x := models.NewKouJumpDiffusion(riskFreeRate, volatility, scaleHistoricalPrices(historicalPrices, 3), timeStep)
+
+	profitCount1x := 0
+	profitCount2x := 0
+	profitCount3x := 0
+
+	for i := 0; i < numSimulations; i++ {
+		finalPrice1 := kou1x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
+		finalPrice2 := kou2x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
+		finalPrice3 := kou3x.SimulatePrice(underlyingPrice, tau, timeSteps, rngPool.Get().(*rand.Rand))
 
 		if models.IsProfitable(spread, finalPrice1) {
 			profitCount1x++
