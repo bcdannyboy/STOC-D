@@ -5,6 +5,7 @@
 STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advanced options trading analysis tool that employs various stochastic models and volatility estimation techniques to identify optimal credit spread opportunities.
 
 ## Table of Contents
+
 1. [Introduction](#introduction)
 2. [Features](#features)
 3. [Installation](#installation)
@@ -30,16 +31,19 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 ## Installation
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/bcdannyboy/stocd.git
    ```
 
 2. Install dependencies:
+
    ```
    go mod download
    ```
 
 3. Set up your Tradier API key in a `.env` file:
+
    ```
    TRADIER_KEY=your_api_key_here
    ```
@@ -180,13 +184,12 @@ The simulation process:
   - [ ] CGMY Tempered Stable Process Model
   - [ ] Generalized Hyperbolic Model
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
-   - [ ] Levy Copulas for dependence modelling
+  - [ ] Levy Copulas for dependence modelling
 - [ ] Hedging Mechanisms
-   - [ ] Superhedging
-   - [ ] Options Greeks Hedging
-   - [ ] Mean-Variance Heding
+  - [ ] Superhedging
+  - [ ] Options Greeks Hedging
+  - [ ] Mean-Variance Heding
 - [ ] Add portfolio management
   - [ ] Position add / close capabilities
   - [ ] Historical position tracking
   - [ ] Profit / loss tracking
-  - [ ] Portfolio greeks
