@@ -183,4 +183,9 @@ The simulation process:
     - [ ] Profit / loss tracking
     - [ ] Portfolio greeks
 - [ ] Add multi-asset portfolio optimization capabilities
-    - [ ] Triangular arbitrage using 3-way ETF cointegration analysis translated to options positions
+    - [ ] Triangular mean-reversion trading using 3-way ETF cointegration analysis translated to options positions
+        - [ ] Johansen cointegration test
+        - [ ] Kalman filter hedge ratio estimation
+        - [ ] Options position correlation
+    - [ ] Bollinger band capture strategies
+
