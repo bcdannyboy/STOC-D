@@ -12,9 +12,12 @@ STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advance
 4. [Usage](#usage)
 5. [Technical Details](#technical-details)
    - [Volatility Estimation](#volatility-estimation)
-   - [Stochastic Models](#stochastic-models)
+   - [One-Dimensional Stochastic Models](#one-dimensional-stochastic-models)
+   - [Multi-Dimensional Stochastic Models](#multi-dimensional-stochastic-models)
+   - [Hedging Mechanisms](#hedging-mechanisms)
    - [Monte Carlo Simulation](#monte-carlo-simulation)
-6. [Roadmap](#roadmap)
+6. [Portfolio Management](#portfolio-management)
+7. [Roadmap](#roadmap)
 
 ## Introduction
 
@@ -64,109 +67,59 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 STOC'D implements several volatility estimation techniques:
 
-1. **Yang-Zhang Volatility**: This method provides a more accurate estimation of volatility by considering opening, closing, high, and low prices. It's particularly useful for assets with significant overnight price jumps.
-
-   Implementation: `models/yang.go`
-
-   The Yang-Zhang estimator is calculated as:
-
-   ```
-   σ_YZ^2 = σ_O^2 + k * σ_C^2 + (1 - k) * σ_RS^2
-   ```
-
-   Where:
-   - σ_O^2 is the opening price volatility
-   - σ_C^2 is the closing price volatility
-   - σ_RS^2 is the Rogers-Satchell volatility
-   - k is a weighting factor
+1. **Yang-Zhang Volatility**: This method provides a more accurate estimation of volatility by considering opening, closing, high, and low prices.
 
 2. **Rogers-Satchell Volatility**: This estimator is drift-independent and uses high, low, opening, and closing prices.
 
-   Implementation: `models/rogers.go`
-
-   The Rogers-Satchell volatility is calculated as:
-
-   ```
-   σ_RS^2 = ln(H/C) * ln(H/O) + ln(L/C) * ln(L/O)
-   ```
-
-   Where H, L, O, C are the high, low, opening, and closing prices respectively.
-
 3. **Local Volatility Surface**: This method creates a volatility surface based on option prices across different strikes and expirations.
 
-   Implementation: `models/local_vol.go`
+### One-Dimensional Stochastic Models
 
-   The local volatility is interpolated using:
+STOC'D utilizes the following one-dimensional stochastic models for price simulation:
 
-   ```
-   σ_local(K, T) = Interpolate(K, T, σ_implied)
-   ```
+1. **Heston Stochastic Volatility Model**: This model allows for mean-reverting stochastic volatility.
 
-   Where K is the strike price, T is the time to expiration, and σ_implied is the implied volatility from market prices.
-
-### Stochastic Models
-
-STOC'D utilizes three main stochastic models for price simulation:
-
-1. **Heston Stochastic Volatility Model**: This model allows for mean-reverting stochastic volatility, which can capture volatility clustering and leverage effects.
-
-   Implementation: `models/heston.go`
-
-   The Heston model is defined by the following stochastic differential equations:
-
-   ```
-   dS(t) = μS(t)dt + √v(t)S(t)dW_1(t)
-   dv(t) = κ(θ - v(t))dt + ξ√v(t)dW_2(t)
-   ```
-
-   Where:
-   - S(t) is the asset price
-   - v(t) is the variance
-   - μ is the drift
-   - κ is the rate of mean reversion
-   - θ is the long-term variance
-   - ξ is the volatility of volatility
-   - W_1 and W_2 are Wiener processes with correlation ρ
-
-2. **Merton Jump Diffusion Model**: This model incorporates jumps in the asset price, allowing for sudden, significant price movements.
-
-   Implementation: `models/merton.go`
-
-   The Merton jump diffusion model is defined as:
-
-   ```
-   dS(t) = (μ - λk)S(t)dt + σS(t)dW(t) + J(t)S(t)dN(t)
-   ```
-
-   Where:
-   - λ is the average number of jumps per unit time
-   - k is the average jump size
-   - J(t) is the jump size (typically log-normally distributed)
-   - N(t) is a Poisson process
+2. **Merton Jump Diffusion Model**: This model incorporates jumps in the asset price.
 
 3. **Kou Jump Diffusion Model**: Similar to the Merton model, but with a double exponential distribution for jump sizes.
 
-   Implementation: `models/kuo.go`
+4. **Variance-Gamma Model**: This model uses a gamma process to time-change Brownian motion, allowing for higher kurtosis and skewness.
 
-   The Kou model is defined similarly to the Merton model, but with a different jump size distribution:
+5. **Normal-Inverse Gaussian Model**: This model is based on the normal-inverse Gaussian distribution and can capture both skewness and kurtosis in returns.
 
-   ```
-   J(t) = exp(Y) - 1
-   ```
+6. **Generalized Hyperbolic Model**: This model provides a flexible class of distributions that includes many other models as special cases.
 
-   Where Y follows a double exponential distribution.
+7. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
+
+### Multi-Dimensional Stochastic Models
+
+STOC'D plans to implement multi-dimensional stochastic models for price simulation and dependence modeling:
+
+1. **Levy Copulas**: These will be used for dependence modeling between multiple assets, allowing for more accurate portfolio simulations.
+
+### Hedging Mechanisms
+
+STOC'D aims to implement various hedging mechanisms:
+
+1. **Superhedging**: This technique aims to find the cheapest portfolio that dominates the payoff of a given contingent claim.
+
+2. **Options Greeks Hedging**: This involves using the Greeks (delta, gamma, vega, theta) to create a hedged portfolio.
+
+3. **Mean-Variance Hedging**: This approach aims to find the self-financing strategy that minimizes the expected squared hedging error.
 
 ### Monte Carlo Simulation
 
-STOC'D uses Monte Carlo simulation to estimate the probability of profit for identified credit spreads. This involves simulating thousands of price paths using the stochastic models and calculating the proportion of paths that result in a profitable outcome.
+STOC'D uses Monte Carlo simulation to estimate the probability of profit for identified credit spreads.
 
-Implementation: `probability/ivmc.go`
+## Portfolio Management
 
-The simulation process:
+STOC'D plans to implement comprehensive portfolio management features:
 
-1. Generate multiple price paths using the chosen stochastic model
-2. For each path, determine if the spread would be profitable at expiration
-3. Calculate the proportion of profitable paths to estimate the probability of profit
+1. **Position Add / Close Capabilities**: Ability to add new positions or close existing ones.
+
+2. **Historical Position Tracking**: Keep track of all historical positions for analysis and reporting.
+
+3. **Profit / Loss Tracking**: Real-time and historical profit/loss tracking for individual positions and the overall portfolio.
 
 ## Roadmap
 
@@ -177,18 +130,17 @@ The simulation process:
   - [x] Heston Stochastic Volatility Model
 - [x] Implement one-dimensional stochastic models with jumps for price simulation
   - [x] Merton Jump Diffusion Model
-  - [x] Kuo Jump Diffusion Model
-  - [ ] Variance-Gamma
-  - [ ] Normal-Inverse Gaussian
-  - [ ] Generalized-Hyperbolic Model
-  - [ ] CGMY Tempered Stable Process Model
+  - [x] Kou Jump Diffusion Model
+  - [ ] Variance-Gamma Model
+  - [ ] Normal-Inverse Gaussian Model
   - [ ] Generalized Hyperbolic Model
+  - [ ] CGMY Tempered Stable Process Model
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
   - [ ] Levy Copulas for dependence modelling
 - [ ] Hedging Mechanisms
   - [ ] Superhedging
   - [ ] Options Greeks Hedging
-  - [ ] Mean-Variance Heding
+  - [ ] Mean-Variance Hedging
 - [ ] Add portfolio management
   - [ ] Position add / close capabilities
   - [ ] Historical position tracking
