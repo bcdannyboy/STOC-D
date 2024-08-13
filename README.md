@@ -179,16 +179,14 @@ The simulation process:
   - [ ] Generalized-Hyperbolic Model
   - [ ] CGMY Tempered Stable Process Model
   - [ ] Generalized Hyperbolic Model
-- [ ] Implement multi-dimensional stochastic models with jumps for price simulation
+- [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
+   - [ ] Levy Copulas for dependence modelling
+- [ ] Hedging Mechanisms
+   - [ ] Superheding
+   - [ ] Options Greeks Hedging
+   - [ ] Mean-Variance Heding
 - [ ] Add portfolio management
   - [ ] Position add / close capabilities
   - [ ] Historical position tracking
   - [ ] Profit / loss tracking
   - [ ] Portfolio greeks
-- [ ] Add multi-asset portfolio optimization capabilities
-  - [ ] Triangular mean-reversion trading using 3-way ETF cointegration analysis translated to options positions
-    - [ ] Johansen cointegration test
-    - [ ] Kalman filter hedge ratio estimation
-    - [ ] Options position correlation
-  - [ ] Bollinger band capture strategies
-
