@@ -171,12 +171,15 @@ The simulation process:
   - [x] Rogers-Satchell Volatility
   - [x] Local Volatility Surface
   - [x] Heston Stochastic Volatility Model
-- [x] Implement stochastic models with jumps for price simulation
+- [x] Implement one-dimensional stochastic models with jumps for price simulation
   - [x] Merton Jump Diffusion Model
   - [x] Kuo Jump Diffusion Model
   - [ ] Variance-Gamma
   - [ ] Normal-Inverse Gaussian
   - [ ] Generalized-Hyperbolic Model
+  - [ ] CGMY Tempered Stable Process Model
+  - [ ] Generalized Hyperbolic Model
+- [ ] Implement multi-dimensional stochastic models with jumps for price simulation
 - [ ] Add portfolio management
   - [ ] Position add / close capabilities
   - [ ] Historical position tracking
