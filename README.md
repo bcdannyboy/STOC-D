@@ -182,7 +182,7 @@ The simulation process:
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
    - [ ] Levy Copulas for dependence modelling
 - [ ] Hedging Mechanisms
-   - [ ] Superheding
+   - [ ] Superhedging
    - [ ] Options Greeks Hedging
    - [ ] Mean-Variance Heding
 - [ ] Add portfolio management
