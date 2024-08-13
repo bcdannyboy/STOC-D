@@ -167,25 +167,25 @@ The simulation process:
 ## Roadmap
 
 - [x] Implement volatility estimation techniques
-    - [x] Yang-Zhang Volatility
-    - [x] Rogers-Satchell Volatility
-    - [x] Local Volatility Surface
-    - [x] Heston Stochastic Volatility Model
+  - [x] Yang-Zhang Volatility
+  - [x] Rogers-Satchell Volatility
+  - [x] Local Volatility Surface
+  - [x] Heston Stochastic Volatility Model
 - [x] Implement stochastic models with jumps for price simulation
-    - [x] Merton Jump Diffusion Model
-    - [x] Kuo Jump Diffusion Model
-    - [ ] Variance-Gamma
-    - [ ] Normal-Inverse Gaussian
-    - [ ] Generalized-Hyperbolic Model
+  - [x] Merton Jump Diffusion Model
+  - [x] Kuo Jump Diffusion Model
+  - [ ] Variance-Gamma
+  - [ ] Normal-Inverse Gaussian
+  - [ ] Generalized-Hyperbolic Model
 - [ ] Add portfolio management
-    - [ ] Position add / close capabilities
-    - [ ] Historical position tracking
-    - [ ] Profit / loss tracking
-    - [ ] Portfolio greeks
+  - [ ] Position add / close capabilities
+  - [ ] Historical position tracking
+  - [ ] Profit / loss tracking
+  - [ ] Portfolio greeks
 - [ ] Add multi-asset portfolio optimization capabilities
-    - [ ] Triangular mean-reversion trading using 3-way ETF cointegration analysis translated to options positions
-        - [ ] Johansen cointegration test
-        - [ ] Kalman filter hedge ratio estimation
-        - [ ] Options position correlation
-    - [ ] Bollinger band capture strategies
+  - [ ] Triangular mean-reversion trading using 3-way ETF cointegration analysis translated to options positions
+    - [ ] Johansen cointegration test
+    - [ ] Kalman filter hedge ratio estimation
+    - [ ] Options position correlation
+  - [ ] Bollinger band capture strategies
 
