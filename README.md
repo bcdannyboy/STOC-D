@@ -1,2 +1,2 @@
-# dquant
-Dynamic Quant Financial Analysis
+# STOC'D
+Stochastic Optimization for Credit Spread Decision Making

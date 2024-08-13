@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/positions"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/positions"
+	"github.com/bcdannyboy/stocd/tradier"
 	"github.com/joho/godotenv"
 	"github.com/xhhuango/json"
 )
@@ -24,9 +24,9 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"GTLB"}
+	symbols := []string{"SPY"}
 	indicators := map[string]int{
-		"GTLB": 1,
+		"SPY": 1,
 	}
 
 	minDTE := 5

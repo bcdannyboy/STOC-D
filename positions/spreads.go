@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/probability"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/probability"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 const (

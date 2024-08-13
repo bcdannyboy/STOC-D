@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/tradier"
 	"golang.org/x/exp/rand"
 )
 

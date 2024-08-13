@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 func calculateIntrinsicValue(shortLeg, longLeg models.SpreadLeg, underlyingPrice float64, spreadType string) float64 {

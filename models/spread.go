@@ -1,7 +1,7 @@
 package models
 
 import (
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 type SpreadLeg struct {

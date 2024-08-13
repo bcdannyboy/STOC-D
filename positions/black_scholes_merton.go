@@ -3,7 +3,7 @@ package positions
 import (
 	"math"
 
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 const (

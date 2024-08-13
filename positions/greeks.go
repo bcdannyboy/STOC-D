@@ -3,8 +3,8 @@ package positions
 import (
 	"math"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 // ShadowGamma calculates the Shadow Up-Gamma and Shadow Down-Gamma

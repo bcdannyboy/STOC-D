@@ -3,8 +3,8 @@ package probability
 import (
 	"sync"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/tradier"
 	"golang.org/x/exp/rand"
 )
 

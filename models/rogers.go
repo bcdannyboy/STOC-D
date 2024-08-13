@@ -3,7 +3,7 @@ package models
 import (
 	"math"
 
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 func CalculateRogersSatchellVolatility(history tradier.QuoteHistory) map[string]float64 {

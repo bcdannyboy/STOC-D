@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/bcdannyboy/dquant/models"
-	"github.com/bcdannyboy/dquant/tradier"
+	"github.com/bcdannyboy/stocd/models"
+	"github.com/bcdannyboy/stocd/tradier"
 )
 
 func confirmVolatilities(spread models.OptionSpread, localVolSurface models.VolatilitySurface, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64) (float64, float64) {
@@ -122,39 +122,6 @@ func calculateAverage(volatilities map[string]float64) float64 {
 		total += vol
 	}
 	return total / float64(len(volatilities))
-}
-
-func calculateHistoricalJumps(history tradier.QuoteHistory) []float64 {
-	jumps := []float64{}
-	for i := 1; i < len(history.History.Day); i++ {
-		prevClose := history.History.Day[i-1].Close
-		currOpen := history.History.Day[i].Open
-		jump := math.Log(currOpen / prevClose)
-		jumps = append(jumps, jump)
-	}
-	return jumps
-}
-
-func extractHistoricalPrices(history tradier.QuoteHistory) []float64 {
-	prices := make([]float64, len(history.History.Day))
-	for i, day := range history.History.Day {
-		prices[i] = day.Close
-	}
-	return prices
-}
-
-func scaleHistoricalPrices(prices []float64, factor float64) []float64 {
-	scaledPrices := make([]float64, len(prices))
-	for i, price := range prices {
-		if i == 0 {
-			scaledPrices[i] = price
-		} else {
-			returnRate := math.Log(price / prices[i-1])
-			scaledReturn := returnRate * factor
-			scaledPrices[i] = scaledPrices[i-1] * math.Exp(scaledReturn)
-		}
-	}
-	return scaledPrices
 }
 
 func calculateHestonVolatility(spread models.OptionSpread, history tradier.QuoteHistory) float64 {
