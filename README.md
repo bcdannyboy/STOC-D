@@ -132,17 +132,7 @@ STOC'D utilizes the following one-dimensional stochastic models for price simula
 
    Where Y follows a double exponential distribution.
 
-4. **Normal-Inverse Gaussian Model**: This model is based on the normal-inverse Gaussian distribution and can capture both skewness and kurtosis in returns.
-
-   The NIG process is defined as:
-
-   ```
-   X(t) = μt + βδ^2W(τ(t)) + δW(τ(t))
-   ```
-
-   Where τ(t) is an inverse Gaussian process.
-
-5. **Generalized Hyperbolic Model**: This model provides a flexible class of distributions that includes many other models as special cases.
+4. **Generalized Hyperbolic Model**: This model provides a flexible class of distributions that includes many other models as special cases.
 
    The GH process is defined by its characteristic function:
 
@@ -152,7 +142,7 @@ STOC'D utilizes the following one-dimensional stochastic models for price simula
 
    Where K_λ is the modified Bessel function of the third kind.
 
-6. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
+5. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
 
    The CGMY process is defined by its characteristic function:
 
@@ -228,7 +218,6 @@ STOC'D plans to implement comprehensive portfolio management features:
 - [x] Implement one-dimensional stochastic models with jumps for price simulation
   - [x] Merton Jump Diffusion Model
   - [x] Kou Jump Diffusion Model
-  - [ ] Normal-Inverse Gaussian Model
   - [ ] Generalized Hyperbolic Model
   - [ ] CGMY Tempered Stable Process Model
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
