@@ -128,3 +128,35 @@ func calculateHistoricalReturns(history tradier.QuoteHistory) []float64 {
 	}
 	return returns
 }
+
+func calculateLogReturns(prices []float64) []float64 {
+	logReturns := make([]float64, len(prices)-1)
+	for i := 1; i < len(prices); i++ {
+		logReturns[i-1] = math.Log(prices[i] / prices[i-1])
+	}
+	return logReturns
+}
+
+func minMax(data []float64) (min, max, mean, std float64) {
+	if len(data) == 0 {
+		return
+	}
+	min, max = data[0], data[0]
+	sum := 0.0
+	for _, v := range data {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+		sum += v
+	}
+	mean = sum / float64(len(data))
+	sumSq := 0.0
+	for _, v := range data {
+		sumSq += (v - mean) * (v - mean)
+	}
+	std = math.Sqrt(sumSq / float64(len(data)))
+	return
+}
