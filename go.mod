@@ -9,4 +9,7 @@ require (
 	gonum.org/v1/gonum v0.15.0
 )
 
-require golang.org/x/tools v0.15.0 // indirect
+require (
+	github.com/dreading/gospecfunc v0.0.0-20191105042551-e794f60da5c3 // indirect
+	golang.org/x/tools v0.15.0 // indirect
+)

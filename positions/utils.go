@@ -118,3 +118,13 @@ func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
 
 	return strikes
 }
+
+func calculateHistoricalReturns(history tradier.QuoteHistory) []float64 {
+	returns := make([]float64, len(history.History.Day)-1)
+	for i := 1; i < len(history.History.Day); i++ {
+		prevClose := history.History.Day[i-1].Close
+		currClose := history.History.Day[i].Close
+		returns[i-1] = math.Log(currClose / prevClose)
+	}
+	return returns
+}

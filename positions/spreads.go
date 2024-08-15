@@ -135,16 +135,6 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	avgVol := (avgYZ + avgRS + avgIV) / 3
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
-	// Calibrate Heston model
-	fmt.Printf("Calibrating Heston model...\n")
-	hestonModel := models.NewHestonModel(avgVol*avgVol, 2, avgVol*avgVol, 0.4, -0.5)
-	err := hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
-	if err != nil {
-		fmt.Printf("Error calibrating Heston model: %v\n", err)
-		// TODO: Handle calibration error
-	}
-	globalModels.Heston = hestonModel
-
 	// Calibrate Merton model
 	fmt.Printf("Calibrating Merton model...\n")
 	fmt.Printf("Calculating historical jumps...\n")
@@ -159,6 +149,16 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	fmt.Printf("Calibrating Kou model...\n")
 	kouModel := models.NewKouJumpDiffusion(riskFreeRate, avgVol, marketPrices, 1.0/252.0)
 	globalModels.Kou = kouModel
+
+	// Calibrate Heston model
+	fmt.Printf("Calibrating Heston model...\n")
+	hestonModel := models.NewHestonModel(avgVol*avgVol, 2, avgVol*avgVol, 0.4, -0.5)
+	err := hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
+	if err != nil {
+		fmt.Printf("Error calibrating Heston model: %v\n", err)
+		// TODO: Handle calibration error
+	}
+	globalModels.Heston = hestonModel
 
 	modelsCalibrated = true
 	fmt.Printf("Models calibrated\n")
