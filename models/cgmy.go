@@ -21,14 +21,21 @@ func NewCGMYModel(c, g, m, y float64) *CGMYModel {
 	return &CGMYModel{C: c, G: g, M: m, Y: y}
 }
 
-func (m *CGMYModel) CharacteristicFunction(u complex128, t float64) complex128 {
-	return cmplx.Exp(complex(t*m.C, 0) * (cmplx.Pow(complex(m.M, 0)-u, complex(m.Y, 0)) -
-		cmplx.Pow(complex(m.M, 0), complex(m.Y, 0)) +
-		cmplx.Pow(complex(m.G, 0)+u, complex(m.Y, 0)) -
-		cmplx.Pow(complex(m.G, 0), complex(m.Y, 0))))
+// Characteristic Function incorporating stochastic volatility as per document
+func (m *CGMYModel) CharacteristicFunction(u complex128, t float64, vol float64) complex128 {
+	// Convert m.C to complex128 to match the types
+	c := complex(m.C, 0)
+	mComplex := complex(m.M, 0)
+	gComplex := complex(m.G, 0)
+	yComplex := complex(m.Y, 0)
+
+	levySymbol := c * (cmplx.Pow(mComplex-u, yComplex) - cmplx.Pow(mComplex, yComplex) +
+		cmplx.Pow(gComplex+u, yComplex) - cmplx.Pow(gComplex, yComplex))
+
+	return cmplx.Exp(complex(t*vol, 0) * levySymbol)
 }
 
-func (m *CGMYModel) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand) float64 {
+func (m *CGMYModel) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand, vol []float64) float64 {
 	if m.Y >= 2 {
 		panic("Y must be less than 2 for the CGMY process")
 	}
@@ -37,22 +44,22 @@ func (m *CGMYModel) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand) f
 	X := 0.0
 
 	for i := 0; i < steps; i++ {
-		dX := m.generateIncrement(dt, rng)
+		dX := m.generateIncrement(dt, rng, vol[i])
 		X += dX
 	}
 
-	return s0 * math.Exp((r-m.calculateCompensator())*t+X)
+	return s0 * math.Exp((r-m.calculateCompensator()*t)+X)
 }
 
-func (m *CGMYModel) generateIncrement(dt float64, rng *rand.Rand) float64 {
+func (m *CGMYModel) generateIncrement(dt float64, rng *rand.Rand, vol float64) float64 {
 	numJumps := m.samplePoisson(m.C*dt, rng)
 	increment := 0.0
 
 	for i := 0; i < numJumps; i++ {
 		if rng.Float64() < m.M/(m.G+m.M) {
-			increment += m.generatePositiveJump(rng)
+			increment += m.generatePositiveJump(rng) * vol
 		} else {
-			increment += m.generateNegativeJump(rng)
+			increment += m.generateNegativeJump(rng) * vol
 		}
 	}
 
@@ -81,7 +88,7 @@ func (m *CGMYModel) samplePoisson(lambda float64, rng *rand.Rand) int {
 }
 
 func (m *CGMYModel) calculateCompensator() float64 {
-	return m.C * math.Gamma(-m.Y) * (math.Pow(m.M, m.Y) + math.Pow(m.G, m.Y) - math.Pow(m.M-1, m.Y) - math.Pow(m.G+1, m.Y))
+	return m.C * math.Gamma(-m.Y) * (math.Pow(m.M, m.Y-1) + math.Pow(m.G, m.Y-1))
 }
 
 func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
@@ -91,7 +98,6 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	lowerBounds := []float64{0, 0.1, 0.1, 0.1}
 	upperBounds := []float64{100, 50, 100, 1.99}
 
-	// Initial guess
 	initialParams := []float64{1, 5, 5, 0.5}
 
 	// Objective function
@@ -106,7 +112,7 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 		tempM := &CGMYModel{C: c, G: g, M: m, Y: y}
 		logLikelihood := 0.0
 		for _, r := range historicalReturns {
-			cf := tempM.CharacteristicFunction(complex(0, r), 1)
+			cf := tempM.CharacteristicFunction(complex(0, r), 1, 1.0) // Adjusted for stochastic vol
 			absCF := cmplx.Abs(cf)
 			if absCF <= 0 || math.IsNaN(absCF) || math.IsInf(absCF, 0) {
 				return math.Inf(1)
@@ -122,11 +128,11 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	}
 
 	result, err := optimize.Minimize(problem, initialParams, &optimize.Settings{
-		MajorIterations: 1000,
+		MajorIterations: 10000,
 		Converger: &optimize.FunctionConverge{
 			Absolute:   1e-10,
 			Relative:   1e-10,
-			Iterations: 100,
+			Iterations: 10000,
 		},
 	}, &optimize.NelderMead{})
 
@@ -143,6 +149,7 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	}
 
 	m.C, m.G, m.M, m.Y = result.X[0], result.X[1], result.X[2], result.X[3]
+	fmt.Printf("Calibration complete. C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
 	return nil
 }
 
@@ -217,7 +224,7 @@ func (m *CGMYModel) OptionPrice(s, k, r, t float64) float64 {
 	for j := 0; j < N; j++ {
 		u := eta * float64(j)
 		complexU := complex(u, 0)
-		characteristicFn := m.CharacteristicFunction(complex(u-(alpha+1), 0), t)
+		characteristicFn := m.CharacteristicFunction(complex(u-(alpha+1), 0), t, 1.0) // Adjusted for stochastic vol
 		denominator := complex(alpha*alpha+alpha, 0) - complexU*complexU + complex(0, (2*alpha+1)*u)
 		x[j] = cmplx.Exp(complex(0, -b*u)) * characteristicFn / denominator
 	}

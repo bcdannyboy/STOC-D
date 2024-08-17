@@ -68,9 +68,9 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		name string
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels) map[string]float64
 	}{
-		// {name: "Merton", fn: simulateMertonJumpDiffusion},
-		// {name: "Kou", fn: simulateKouJumpDiffusion},
-		// {name: "Heston", fn: simulateHeston},
+		{name: "Merton", fn: simulateMertonJumpDiffusion},
+		{name: "Kou", fn: simulateKouJumpDiffusion},
+		{name: "Heston", fn: simulateHeston},
 		{name: "CGMY", fn: simulateCGMY},
 	}
 
@@ -234,20 +234,29 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 	cgmy := *globalModels.CGMY // Create a copy of the global model
 
 	// Adjust CGMY parameters based on the provided volatility
-	varianceAdjustment := volatility * volatility / (cgmy.C * math.Gamma(2-cgmy.Y) * (math.Pow(cgmy.M, cgmy.Y-2) + math.Pow(cgmy.G, cgmy.Y-2)))
-	cgmy.C *= varianceAdjustment
+	variance := volatility * volatility
+	expectedVariance := cgmy.C * math.Gamma(2-cgmy.Y) * (math.Pow(cgmy.M, cgmy.Y-2) + math.Pow(cgmy.G, cgmy.Y-2))
+	cgmy.C *= variance / expectedVariance
 
 	profitCount := 0
 
+	// Generate volatilities for each time step
+	volatilities := make([]float64, timeSteps)
+	for i := 0; i < timeSteps; i++ {
+		volatilities[i] = volatility
+	}
+
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := cgmy.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
+		finalPrice := cgmy.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng, volatilities)
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
 		}
 	}
 
+	probability := float64(profitCount) / float64(numSimulations)
+
 	return map[string]float64{
-		"probability": float64(profitCount) / float64(numSimulations),
+		"probability": probability,
 	}
 }
