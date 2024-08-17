@@ -135,6 +135,20 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	avgVol := (avgYZ + avgRS + avgIV) / 3
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
+	// Calculate historical returns
+	fmt.Printf("Calculating historical returns...\n")
+	historicalReturns := calculateHistoricalReturns(history)
+
+	// Calibrate CGMY model
+	fmt.Printf("Calibrating CGMY model...\n")
+	cgmyModel := models.NewCGMYModel(1, 5, 5, 0.5) // Initial parameters
+	err := cgmyModel.Calibrate(historicalReturns)
+	if err != nil {
+		fmt.Printf("Error calibrating CGMY model: %v\n", err)
+		// TODO: Handle calibration error
+	}
+	globalModels.CGMY = cgmyModel
+
 	// Calibrate Merton model
 	fmt.Printf("Calculating historical jumps...\n")
 	historicalJumps := calculateHistoricalJumps(history)
@@ -151,7 +165,7 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	// Calibrate Heston model
 	fmt.Printf("Calibrating Heston model...\n")
 	hestonModel := models.NewHestonModel(avgVol*avgVol, 2, avgVol*avgVol, 0.4, -0.5)
-	err := hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
+	err = hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
 	if err != nil {
 		fmt.Printf("Error calibrating Heston model: %v\n", err)
 		// TODO: Handle calibration error

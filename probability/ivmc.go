@@ -24,6 +24,7 @@ type GlobalModels struct {
 	Heston *models.HestonModel
 	Merton *models.MertonJumpDiffusion
 	Kou    *models.KouJumpDiffusion
+	CGMY   *models.CGMYModel
 }
 
 func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels, avgVol float64) models.SpreadWithProbabilities {
@@ -69,6 +70,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{name: "Merton", fn: simulateMertonJumpDiffusion},
 		{name: "Kou", fn: simulateKouJumpDiffusion},
 		{name: "Heston", fn: simulateHeston},
+		{name: "CGMY", fn: simulateCGMY},
 	}
 
 	results := make(map[string]float64, len(volatilities)*len(simulationFuncs))
@@ -131,6 +133,13 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		Theta: globalModels.Heston.Theta,
 		Xi:    globalModels.Heston.Xi,
 		Rho:   globalModels.Heston.Rho,
+	}
+
+	result.CGMYParams = models.CGMYModel{
+		C: globalModels.CGMY.C,
+		G: globalModels.CGMY.G,
+		M: globalModels.CGMY.M,
+		Y: globalModels.CGMY.Y,
 	}
 
 	result.VolatilityInfo = models.VolatilityInfo{
@@ -208,6 +217,26 @@ func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, v
 
 	for i := 0; i < numSimulations; i++ {
 		finalPrice := heston.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps)
+
+		if models.IsProfitable(spread, finalPrice) {
+			profitCount++
+		}
+	}
+
+	return map[string]float64{
+		"probability": float64(profitCount) / float64(numSimulations),
+	}
+}
+
+func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
+	tau := float64(daysToExpiration) / 365.0
+
+	cgmy := *globalModels.CGMY // Create a copy of the global model
+
+	profitCount := 0
+
+	for i := 0; i < numSimulations; i++ {
+		finalPrice := cgmy.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps)
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
