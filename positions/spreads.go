@@ -105,11 +105,6 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 
 		fmt.Printf("  Heston Model Parameters:\n")
 		fmt.Printf("    V0: %.4f, Kappa: %.4f, Theta: %.4f, Xi: %.4f, Rho: %.4f\n", spread.HestonParams.V0, spread.HestonParams.Kappa, spread.HestonParams.Theta, spread.HestonParams.Xi, spread.HestonParams.Rho)
-
-		fmt.Printf("  Variance-Gamma Model Parameters:\n")
-		fmt.Printf("    Mu: %.4f, Alpha: %.4f, Beta: %.4f, Lambda: %.4f\n",
-			globalModels.VarianceGamma.Mu, globalModels.VarianceGamma.Alpha,
-			globalModels.VarianceGamma.Beta, globalModels.VarianceGamma.Lambda)
 	}
 
 	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
@@ -140,21 +135,9 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	avgVol := (avgYZ + avgRS + avgIV) / 3
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
-	fmt.Printf("Calibrating Variance-Gamma model...\n")
-	vgModel := &models.VarianceGamma{}
-	logReturns := calculateLogReturns(marketPrices)
-	min, max, mean, std := minMax(logReturns)
-	fmt.Printf("Log returns statistics: min=%f, max=%f, mean=%f, std=%f\n", min, max, mean, std)
-	vgModel.Fit(logReturns)
-	globalModels.VarianceGamma = vgModel
-
-	fmt.Printf("Variance-Gamma model parameters: Mu=%.4f, Alpha=%.4f, Beta=%.4f, Lambda=%.4f\n",
-		vgModel.Mu, vgModel.Alpha, vgModel.Beta, vgModel.Lambda)
 	// Calibrate Merton model
-	fmt.Printf("Calibrating Merton model...\n")
 	fmt.Printf("Calculating historical jumps...\n")
 	historicalJumps := calculateHistoricalJumps(history)
-	fmt.Printf("Calibrating Merton model with historical jumps...\n")
 	mertonModel := models.NewMertonJumpDiffusion(riskFreeRate, avgVol, 1.0, 0, avgVol)
 	fmt.Printf("Calibrating Merton model with historical jumps...\n")
 	mertonModel.CalibrateJumpSizes(historicalJumps, 1)

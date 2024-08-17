@@ -1,7 +1,6 @@
 package probability
 
 import (
-	"math"
 	"sync"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -22,10 +21,9 @@ var rngPool = sync.Pool{
 }
 
 type GlobalModels struct {
-	Heston        *models.HestonModel
-	Merton        *models.MertonJumpDiffusion
-	Kou           *models.KouJumpDiffusion
-	VarianceGamma *models.VarianceGamma
+	Heston *models.HestonModel
+	Merton *models.MertonJumpDiffusion
+	Kou    *models.KouJumpDiffusion
 }
 
 func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels, avgVol float64) models.SpreadWithProbabilities {
@@ -71,7 +69,6 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{name: "Merton", fn: simulateMertonJumpDiffusion},
 		{name: "Kou", fn: simulateKouJumpDiffusion},
 		{name: "Heston", fn: simulateHeston},
-		{name: "VarianceGamma", fn: simulateVarianceGamma},
 	}
 
 	results := make(map[string]float64, len(volatilities)*len(simulationFuncs))
@@ -219,84 +216,5 @@ func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, v
 
 	return map[string]float64{
 		"probability": float64(profitCount) / float64(numSimulations),
-	}
-}
-
-func simulateVarianceGamma(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
-	tau := float64(daysToExpiration) / 365.0
-
-	vg := *globalModels.VarianceGamma // Create a copy of the global model
-
-	// Adjust the volatility parameter (Alpha) based on the provided volatility
-	vg.Alpha = math.Sqrt(volatility*volatility + vg.Beta*vg.Beta)
-
-	profitCount := 0
-
-	for i := 0; i < numSimulations; i++ {
-		finalPrice := simulateVGPrice(underlyingPrice, riskFreeRate, tau, &vg, rng)
-
-		if models.IsProfitable(spread, finalPrice) {
-			profitCount++
-		}
-	}
-
-	return map[string]float64{
-		"probability": float64(profitCount) / float64(numSimulations),
-	}
-}
-
-func simulateVGPrice(s0, r, t float64, vg *models.VarianceGamma, rng *rand.Rand) float64 {
-	gamma := math.Sqrt(vg.Alpha*vg.Alpha - vg.Beta*vg.Beta)
-	omega := math.Log(1-vg.Beta*vg.Beta/(vg.Alpha*vg.Alpha)-vg.Alpha*vg.Alpha*vg.Lambda/2) / vg.Lambda
-
-	g := sampleGamma(vg.Lambda*t, 1/vg.Lambda, rng)
-	z := rng.NormFloat64()
-
-	return s0 * math.Exp(r*t+omega*t+vg.Beta*g+math.Sqrt(g)*gamma*z)
-}
-
-// sampleGamma samples from a Gamma distribution with shape k and scale theta
-func sampleGamma(k, theta float64, rng *rand.Rand) float64 {
-	if k < 1 {
-		// Use Johnk's algorithm for k < 1
-		return sampleGammaSmallShape(k, theta, rng)
-	}
-
-	// Use Marsaglia and Tsang's method for k >= 1
-	d := k - 1/3
-	c := 1 / math.Sqrt(9*d)
-
-	for {
-		x := rng.NormFloat64()
-		v := 1 + c*x
-		v = v * v * v
-		u := rng.Float64()
-
-		if u < 1-0.0331*x*x*x*x {
-			return d * v * theta
-		}
-
-		if math.Log(u) < 0.5*x*x+d*(1-v+math.Log(v)) {
-			return d * v * theta
-		}
-	}
-}
-
-// sampleGammaSmallShape samples from a Gamma distribution with shape k < 1
-func sampleGammaSmallShape(k, theta float64, rng *rand.Rand) float64 {
-	for {
-		u := rng.Float64()
-		v := rng.Float64()
-		if u <= math.E/(math.E+k) {
-			x := math.Pow(v, 1/k)
-			if math.Log(u) <= -x {
-				return x * theta
-			}
-		} else {
-			x := 1 - math.Log(v)
-			if math.Log(u) <= math.Pow(x, k-1) {
-				return x * theta
-			}
-		}
 	}
 }

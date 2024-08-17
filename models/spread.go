@@ -56,9 +56,15 @@ type VolatilityInfo struct {
 }
 
 type SpreadWithProbabilities struct {
-	Spread       OptionSpread
-	Probability  ProbabilityResult
-	MeetsRoR     bool
+	Spread              OptionSpread
+	Probability         ProbabilityResult
+	MeetsRoR            bool
+	VarianceGammaParams struct {
+		Mu     float64 // Location parameter: Shifts the distribution left or right
+		Alpha  float64 // Shape parameter: Controls the overall shape of the distribution
+		Beta   float64 // Skewness parameter: Controls the asymmetry of the distribution
+		Lambda float64 // Rate parameter: Inversely related to the kurtosis (tail thickness) of the distribution
+	}
 	MertonParams struct {
 		Lambda float64 // Intensity of jumps
 		Mu     float64 // Drift of jumps

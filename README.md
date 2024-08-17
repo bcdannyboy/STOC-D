@@ -132,37 +132,7 @@ STOC'D utilizes the following one-dimensional stochastic models for price simula
 
    Where Y follows a double exponential distribution.
 
-4. **Variance-Gamma Model**: This model uses a gamma process to time-change Brownian motion, allowing for higher kurtosis and skewness.
-
-   The Variance-Gamma process is defined as:
-
-   ```
-   X(t; σ, ν, θ) = θG(t; 1, ν) + σW(G(t; 1, ν))
-   ```
-
-   Where G(t; 1, ν) is a gamma process and W is a standard Brownian motion.
-
-5. **Normal-Inverse Gaussian Model**: This model is based on the normal-inverse Gaussian distribution and can capture both skewness and kurtosis in returns.
-
-   The NIG process is defined as:
-
-   ```
-   X(t) = μt + βδ^2W(τ(t)) + δW(τ(t))
-   ```
-
-   Where τ(t) is an inverse Gaussian process.
-
-6. **Generalized Hyperbolic Model**: This model provides a flexible class of distributions that includes many other models as special cases.
-
-   The GH process is defined by its characteristic function:
-
-   ```
-   φ(u) = (α^2 - β^2)^(λ/2) / (α^2 - (β + iu)^2)^(λ/2) * K_λ(δ√(α^2 - (β + iu)^2)) / K_λ(δ√(α^2 - β^2))
-   ```
-
-   Where K_λ is the modified Bessel function of the third kind.
-
-7. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
+4. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
 
    The CGMY process is defined by its characteristic function:
 
@@ -190,21 +160,11 @@ STOC'D plans to implement multi-dimensional stochastic models for price simulati
 
 STOC'D aims to implement various hedging mechanisms:
 
-1. **Superhedging**: This technique aims to find the cheapest portfolio that dominates the payoff of a given contingent claim.
-
-   The superhedging price is defined as:
-
-   ```
-   π(X) = inf{x ∈ R : ∃H ∈ H such that x + (H · S)_T ≥ X a.s.}
-   ```
-
-   Where X is the contingent claim, H is the set of admissible trading strategies, and S is the price process.
-
-2. **Options Greeks Hedging**: This involves using the Greeks (delta, gamma, vega, theta) to create a hedged portfolio.
+1. **Options Greeks Hedging**: This involves using the Greeks (delta, gamma, vega, theta) to create a hedged portfolio.
 
    For example, delta-hedging involves maintaining a position of -Δ in the underlying for each long option, where Δ is the first derivative of the option price with respect to the underlying price.
 
-3. **Mean-Variance Hedging**: This approach aims to find the self-financing strategy that minimizes the expected squared hedging error.
+2. **Mean-Variance Hedging**: This approach aims to find the self-financing strategy that minimizes the expected squared hedging error.
 
    The optimal strategy ξ* is the solution to:
 
@@ -273,14 +233,10 @@ STOC'D plans to implement comprehensive portfolio management features:
 - [x] Implement one-dimensional stochastic models with jumps for price simulation
   - [x] Merton Jump Diffusion Model
   - [x] Kou Jump Diffusion Model
-  - [ ] Variance-Gamma Model
-  - [ ] Normal-Inverse Gaussian Model
-  - [ ] Generalized Hyperbolic Model
   - [ ] CGMY Tempered Stable Process Model
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
   - [ ] Levy Copulas for dependence modelling
 - [ ] Hedging Mechanisms
-  - [ ] Superhedging
   - [ ] Options Greeks Hedging
   - [ ] Mean-Variance Hedging
 - [ ] Add portfolio management
