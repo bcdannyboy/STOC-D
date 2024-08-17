@@ -94,25 +94,25 @@ func (m *CGMYModel) calculateCompensator() float64 {
 func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	fmt.Println("Starting CGMY calibration...")
 
-	// Initial parameter bounds
-	lowerBounds := []float64{0, 0.1, 0.1, 0.1}
-	upperBounds := []float64{100, 50, 100, 1.99}
+	lowerBounds := []float64{0.01, 0.1, 0.1, 0.01}
+	upperBounds := []float64{100, 100, 100, 1.99}
 
 	initialParams := []float64{1, 5, 5, 0.5}
 
-	// Objective function
 	objective := func(x []float64) float64 {
 		c, g, m, y := x[0], x[1], x[2], x[3]
 
-		// Safeguard against invalid parameter values
-		if c <= 0 || g <= 0 || m <= 0 || y <= 0 || y >= 2 {
-			return math.Inf(1)
+		// Check bounds
+		for i, val := range x {
+			if val < lowerBounds[i] || val > upperBounds[i] {
+				return math.Inf(1)
+			}
 		}
 
 		tempM := &CGMYModel{C: c, G: g, M: m, Y: y}
 		logLikelihood := 0.0
 		for _, r := range historicalReturns {
-			cf := tempM.CharacteristicFunction(complex(0, r), 1, 1.0) // Adjusted for stochastic vol
+			cf := tempM.CharacteristicFunction(complex(0, r), 1, 1.0)
 			absCF := cmplx.Abs(cf)
 			if absCF <= 0 || math.IsNaN(absCF) || math.IsInf(absCF, 0) {
 				return math.Inf(1)
@@ -120,21 +120,35 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 			logLikelihood += math.Log(absCF)
 		}
 
-		return -logLikelihood
+		// Penalty to keep parameters away from bounds
+		penalty := 0.0
+		for i, val := range x {
+			penalty += math.Pow(val-lowerBounds[i], -2) + math.Pow(upperBounds[i]-val, -2)
+		}
+
+		// Additional penalty for extreme values
+		penalty += math.Pow(c-10, 2)/100 + math.Pow(g-10, 2)/100 + math.Pow(m-10, 2)/100 + math.Pow(y-1, 2)
+
+		return -logLikelihood + penalty
 	}
 
 	problem := optimize.Problem{
 		Func: objective,
 	}
 
+	// Use L-BFGS-B method which respects bounds
+	method := &optimize.LBFGSB{
+		Lmem: 10,
+	}
+
 	result, err := optimize.Minimize(problem, initialParams, &optimize.Settings{
-		MajorIterations: 10000,
+		MajorIterations: 1000,
 		Converger: &optimize.FunctionConverge{
-			Absolute:   1e-10,
-			Relative:   1e-10,
-			Iterations: 10000,
+			Absolute:   1e-8,
+			Relative:   1e-8,
+			Iterations: 1000,
 		},
-	}, &optimize.NelderMead{})
+	}, method)
 
 	if err != nil {
 		fmt.Printf("Full optimization failed: %v\n", err)
@@ -159,13 +173,20 @@ func (m *CGMYModel) fallbackOptimization(objective func([]float64) float64, lowe
 
 	rng := rand.New(rand.NewSource(uint64(rand.Int63())))
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		initialParams := make([]float64, 4)
 		for j := range initialParams {
 			initialParams[j] = lowerBounds[j] + rng.Float64()*(upperBounds[j]-lowerBounds[j])
 		}
 
-		result, err := optimize.Minimize(optimize.Problem{Func: objective}, initialParams, nil, &optimize.NelderMead{})
+		method := &optimize.LBFGSB{
+			Lmem: 10,
+		}
+
+		result, err := optimize.Minimize(optimize.Problem{Func: objective}, initialParams, &optimize.Settings{
+			MajorIterations: 500,
+		}, method)
+
 		if err == nil && result.F < bestF {
 			bestResult = result
 			bestF = result.F
@@ -201,9 +222,9 @@ func (m *CGMYModel) backupParameterEstimation(historicalReturns []float64) {
 	kurtosis -= 3 // Excess kurtosis
 
 	// Estimate CGMY parameters based on moments
-	m.Y = 0.5 // Default value for Y
-	m.C = variance / (math.Pow(1/m.G, m.Y) + math.Pow(1/m.M, m.Y))
-	m.G = math.Sqrt(2 * m.C * math.Gamma(2-m.Y) / variance)
+	m.Y = math.Max(0.1, math.Min(1.9, 2-2/(1+math.Abs(skewness))))
+	m.C = math.Max(0.01, variance/(math.Gamma(2-m.Y)*2))
+	m.G = math.Max(0.1, math.Sqrt(2*m.C*math.Gamma(2-m.Y)/variance))
 	m.M = m.G
 
 	if skewness < 0 {
