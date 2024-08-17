@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"math"
 	"math/cmplx"
 	"math/rand"
@@ -67,25 +68,59 @@ func (m *CGMYModel) calculateCompensator() float64 {
 }
 
 func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
-	objective := func(params []float64) float64 {
-		m.C, m.G, m.M, m.Y = params[0], params[1], params[2], params[3]
+	fmt.Println("Starting CGMY calibration...")
+
+	// Define the objective function
+	objective := func(x []float64) float64 {
+		// Implement parameter constraints
+		c, g, mm, y := math.Max(1e-6, x[0]), math.Max(1e-6, x[1]), math.Max(1e-6, x[2]), math.Min(1.99, math.Max(0.01, x[3]))
+
+		tempM := &CGMYModel{C: c, G: g, M: mm, Y: y}
 		logLikelihood := 0.0
 		for _, r := range historicalReturns {
-			logLikelihood += math.Log(m.density(r))
+			density := tempM.density(r)
+			if density <= 0 {
+				fmt.Printf("Warning: Non-positive density for return %f with parameters C=%f, G=%f, M=%f, Y=%f\n", r, c, g, mm, y)
+				return math.Inf(1)
+			}
+			logLikelihood += math.Log(density)
+		}
+		if math.IsInf(logLikelihood, 0) || math.IsNaN(logLikelihood) {
+			fmt.Printf("Warning: Invalid log-likelihood with parameters C=%f, G=%f, M=%f, Y=%f\n", c, g, mm, y)
+			return math.Inf(1)
 		}
 		return -logLikelihood
 	}
 
-	problem := optimize.Problem{
+	// Set up the problem
+	p := optimize.Problem{
 		Func: objective,
 	}
 
-	result, err := optimize.Minimize(problem, []float64{m.C, m.G, m.M, m.Y}, nil, &optimize.NelderMead{})
+	// Define initial parameters and method
+	initialParams := []float64{1, 5, 5, 0.5}
+	method := &optimize.NelderMead{}
+
+	fmt.Println("Running optimization...")
+	// Run the optimization
+	result, err := optimize.Minimize(p, initialParams, nil, method)
+
 	if err != nil {
-		return err
+		fmt.Printf("Optimization failed: %v\n", err)
+		// Fallback to default values
+		m.C, m.G, m.M, m.Y = 1, 5, 5, 0.5
+		return fmt.Errorf("optimization failed, using default values: %v", err)
 	}
 
+	// Check if the optimization was successful
+	if result.Status != optimize.Success {
+		fmt.Printf("Optimization did not converge: %v\n", result.Status)
+		return fmt.Errorf("optimization did not converge: %v", result.Status)
+	}
+
+	// Update the model parameters
 	m.C, m.G, m.M, m.Y = result.X[0], result.X[1], result.X[2], result.X[3]
+	fmt.Printf("Calibration successful. Final parameters: C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
 	return nil
 }
 
@@ -95,7 +130,15 @@ func (m *CGMYModel) density(x float64) float64 {
 		return real(cmplx.Exp(-complex(0, u*x)) * cf)
 	}
 
-	density, _ := integrate(integrand, -1000, 1000)
+	density, err := integrate(integrand, -1000, 1000)
+	if err != nil {
+		fmt.Printf("Integration error in density calculation: %v", err)
+		return 0
+	}
+	if density <= 0 {
+		fmt.Printf("Non-positive density calculated: %f", density)
+		return 1e-10 // Return a small positive number instead of 0
+	}
 	return density / (2 * math.Pi)
 }
 
