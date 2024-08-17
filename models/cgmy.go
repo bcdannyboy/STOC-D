@@ -29,6 +29,10 @@ func (m *CGMYModel) CharacteristicFunction(u complex128, t float64) complex128 {
 }
 
 func (m *CGMYModel) SimulatePrice(s0, r, t float64, steps int) float64 {
+	if m.Y >= 2 {
+		panic("Y must be less than 2 for the CGMY process")
+	}
+
 	dt := t / float64(steps)
 	X := 0.0
 
@@ -70,76 +74,65 @@ func (m *CGMYModel) calculateCompensator() float64 {
 func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	fmt.Println("Starting CGMY calibration...")
 
-	// Define the objective function
 	objective := func(x []float64) float64 {
-		// Implement parameter constraints
-		c, g, mm, y := math.Max(1e-6, x[0]), math.Max(1e-6, x[1]), math.Max(1e-6, x[2]), math.Min(1.99, math.Max(0.01, x[3]))
+		c, g, mm, y := math.Exp(x[0]), math.Exp(x[1]), math.Exp(x[2]), 1.99/(1+math.Exp(-x[3]))
+
+		fmt.Printf("Trying parameters: C=%f, G=%f, M=%f, Y=%f\n", c, g, mm, y)
 
 		tempM := &CGMYModel{C: c, G: g, M: mm, Y: y}
 		logLikelihood := 0.0
 		for _, r := range historicalReturns {
-			density := tempM.density(r)
-			if density <= 0 {
-				fmt.Printf("Warning: Non-positive density for return %f with parameters C=%f, G=%f, M=%f, Y=%f\n", r, c, g, mm, y)
+			cf := tempM.CharacteristicFunction(complex(0, r), 1)
+			absCF := cmplx.Abs(cf)
+			if absCF <= 0 || math.IsNaN(absCF) || math.IsInf(absCF, 0) {
+				fmt.Printf("Invalid CF value for r=%f\n", r)
 				return math.Inf(1)
 			}
-			logLikelihood += math.Log(density)
+			logLikelihood += math.Log(absCF)
 		}
-		if math.IsInf(logLikelihood, 0) || math.IsNaN(logLikelihood) {
-			fmt.Printf("Warning: Invalid log-likelihood with parameters C=%f, G=%f, M=%f, Y=%f\n", c, g, mm, y)
-			return math.Inf(1)
-		}
-		return -logLikelihood
+
+		// Adjusted regularization term
+		regularization := 0.0001 * (math.Pow(c, 2) + math.Pow(g, 2) + math.Pow(mm, 2) + math.Pow(y, 2))
+
+		result := -logLikelihood + regularization
+		fmt.Printf("Objective function value: %f\n", result)
+		return result
 	}
 
-	// Set up the problem
-	p := optimize.Problem{
-		Func: objective,
-	}
+	p := optimize.Problem{Func: objective}
 
-	// Define initial parameters and method
-	initialParams := []float64{1, 5, 5, 0.5}
+	initialParams := []float64{math.Log(0.1), math.Log(5), math.Log(5), 0}
+
 	method := &optimize.NelderMead{}
 
+	settings := &optimize.Settings{
+		FuncEvaluations: 10000,
+		MajorIterations: 1000,
+		Converger: &optimize.FunctionConverge{
+			Iterations: 100,
+			Relative:   1e-6,
+		},
+	}
+
 	fmt.Println("Running optimization...")
-	// Run the optimization
-	result, err := optimize.Minimize(p, initialParams, nil, method)
+	result, err := optimize.Minimize(p, initialParams, settings, method)
 
 	if err != nil {
 		fmt.Printf("Optimization failed: %v\n", err)
-		// Fallback to default values
-		m.C, m.G, m.M, m.Y = 1, 5, 5, 0.5
+		m.C, m.G, m.M, m.Y = 0.1, 5, 5, 0.5
 		return fmt.Errorf("optimization failed, using default values: %v", err)
 	}
 
-	// Check if the optimization was successful
 	if result.Status != optimize.Success {
 		fmt.Printf("Optimization did not converge: %v\n", result.Status)
 		return fmt.Errorf("optimization did not converge: %v", result.Status)
 	}
 
-	// Update the model parameters
-	m.C, m.G, m.M, m.Y = result.X[0], result.X[1], result.X[2], result.X[3]
+	m.C, m.G, m.M = math.Exp(result.X[0]), math.Exp(result.X[1]), math.Exp(result.X[2])
+	m.Y = 1.99 / (1 + math.Exp(-result.X[3]))
+
 	fmt.Printf("Calibration successful. Final parameters: C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
 	return nil
-}
-
-func (m *CGMYModel) density(x float64) float64 {
-	integrand := func(u float64) float64 {
-		cf := m.CharacteristicFunction(complex(u, 0), 1)
-		return real(cmplx.Exp(-complex(0, u*x)) * cf)
-	}
-
-	density, err := integrate(integrand, -1000, 1000)
-	if err != nil {
-		fmt.Printf("Integration error in density calculation: %v", err)
-		return 0
-	}
-	if density <= 0 {
-		fmt.Printf("Non-positive density calculated: %f", density)
-		return 1e-10 // Return a small positive number instead of 0
-	}
-	return density / (2 * math.Pi)
 }
 
 func (m *CGMYModel) OptionPrice(s, k, r, t float64) float64 {
@@ -167,17 +160,6 @@ func (m *CGMYModel) OptionPrice(s, k, r, t float64) float64 {
 	}
 
 	return v * price * s / k
-}
-
-// Helper function to perform numerical integration
-func integrate(f func(float64) float64, a, b float64) (float64, error) {
-	n := 1000
-	h := (b - a) / float64(n)
-	sum := 0.5 * (f(a) + f(b))
-	for i := 1; i < n; i++ {
-		sum += f(a + float64(i)*h)
-	}
-	return sum * h, nil
 }
 
 // Helper function to perform FFT
