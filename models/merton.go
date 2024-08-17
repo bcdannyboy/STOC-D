@@ -27,15 +27,14 @@ func NewMertonJumpDiffusion(r, sigma, lambda, mu, delta float64) *MertonJumpDiff
 	}
 }
 
-func (m *MertonJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int, rng *rand.Rand) float64 {
+func (m *MertonJumpDiffusion) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand) float64 {
 	dt := t / float64(steps)
 	price := s0
 
 	for i := 0; i < steps; i++ {
 		z := rng.NormFloat64()
-		diffusion := math.Exp((m.R-0.5*m.Sigma*m.Sigma)*dt + m.Sigma*math.Sqrt(dt)*z)
+		diffusion := math.Exp((r-0.5*m.Sigma*m.Sigma)*dt + m.Sigma*math.Sqrt(dt)*z)
 
-		// Poisson process for jumps
 		if rng.Float64() < m.Lambda*dt {
 			y := rng.NormFloat64()
 			jump := math.Exp(m.Mu + m.Delta*y)
@@ -48,7 +47,7 @@ func (m *MertonJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int, rn
 	return price
 }
 
-func (m *MertonJumpDiffusion) OptionPrice(s0, k float64, t float64, isCall bool) float64 {
+func (m *MertonJumpDiffusion) OptionPrice(s0, k, r, t float64, isCall bool) float64 {
 	numSimulations := 1000
 	numWorkers := runtime.GOMAXPROCS(0)
 	simulationsPerWorker := numSimulations / numWorkers
@@ -64,7 +63,7 @@ func (m *MertonJumpDiffusion) OptionPrice(s0, k float64, t float64, isCall bool)
 			localPayoff := float64(0)
 
 			for j := 0; j < simulationsPerWorker; j++ {
-				sT := m.SimulatePrice(s0, t, 252, localRng) // 252 trading days in a year
+				sT := m.SimulatePrice(s0, r, t, 252, localRng) // 252 trading days in a year
 				var payoff float64
 				if isCall {
 					payoff = math.Max(sT-k, 0)
@@ -82,7 +81,7 @@ func (m *MertonJumpDiffusion) OptionPrice(s0, k float64, t float64, isCall bool)
 
 	price := math.Float64frombits(atomic.LoadUint64(&totalPayoff))
 	price /= float64(numSimulations)
-	price *= math.Exp(-m.R * t)
+	price *= math.Exp(-r * t)
 
 	return price
 }

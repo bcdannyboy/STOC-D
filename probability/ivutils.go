@@ -6,6 +6,7 @@ import (
 
 	"github.com/bcdannyboy/stocd/models"
 	"github.com/bcdannyboy/stocd/tradier"
+	"golang.org/x/exp/rand"
 )
 
 func confirmVolatilities(spread models.OptionSpread, localVolSurface models.VolatilitySurface, daysToExpiration int, gkVolatilities, parkinsonVolatilities map[string]float64) (float64, float64) {
@@ -153,11 +154,13 @@ func calculateHestonVolatility(spread models.OptionSpread, history tradier.Quote
 		return 0.0
 	}
 
+	rng := rand.New(rand.NewSource(uint64(time.Now().UnixNano())))
+
 	// Simulate prices using calibrated Heston model
 	numSimulations := 1000
 	var sumSquaredReturns float64
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := heston.SimulatePrice(s0, r, t, 252) // 252 trading days in a year
+		finalPrice := heston.SimulatePrice(s0, r, t, 252, rng) // 252 trading days in a year
 		logReturn := math.Log(finalPrice / s0)
 		sumSquaredReturns += logReturn * logReturn
 	}

@@ -33,15 +33,12 @@ func NewHestonModel(v0, kappa, theta, xi, rho float64) *HestonModel {
 	}
 }
 
-func (h *HestonModel) SimulatePrice(s0, r, t float64, steps int) float64 {
+func (h *HestonModel) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand) float64 {
 	dt := t / float64(steps)
 	sqrtDt := math.Sqrt(dt)
 
 	s := s0
 	v := h.V0
-
-	rng := rngPool.Get().(*rand.Rand)
-	defer rngPool.Put(rng)
 
 	for i := 0; i < steps; i++ {
 		z1 := rng.NormFloat64()
@@ -67,7 +64,7 @@ func (h *HestonModel) SimulatePricesBatch(s0, r, t float64, steps, numSimulation
 		go func(start int) {
 			defer wg.Done()
 			for j := start; j < start+simulationsPerWorker; j++ {
-				results[j] = h.SimulatePrice(s0, r, t, steps)
+				results[j] = h.SimulatePrice(s0, r, t, steps, rngPool.Get().(*rand.Rand))
 			}
 		}(i * simulationsPerWorker)
 	}

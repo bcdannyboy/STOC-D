@@ -120,18 +120,14 @@ func calculateStdDeviation(values []float64, mean float64) float64 {
 }
 
 // SimulatePrice simulates the price path using the Kou jump diffusion model
-func (k *KouJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int) float64 {
+func (k *KouJumpDiffusion) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand) float64 {
 	dt := t / float64(steps)
 	price := s0
 
-	rng := krngPool.Get().(*rand.Rand)
-	defer krngPool.Put(rng)
-
 	for i := 0; i < steps; i++ {
 		z := rng.NormFloat64()
-		diffusion := math.Exp((k.R-0.5*k.Sigma*k.Sigma)*dt + k.Sigma*math.Sqrt(dt)*z)
+		diffusion := math.Exp((r-0.5*k.Sigma*k.Sigma)*dt + k.Sigma*math.Sqrt(dt)*z)
 
-		// Poisson process for jumps
 		if rng.Float64() < k.Lambda*dt {
 			var jump float64
 			if rng.Float64() < k.P {
@@ -149,7 +145,7 @@ func (k *KouJumpDiffusion) SimulatePrice(s0 float64, t float64, steps int) float
 }
 
 // SimulatePricesBatch simulates multiple price paths in parallel
-func (k *KouJumpDiffusion) SimulatePricesBatch(s0, t float64, steps, numSimulations int) []float64 {
+func (k *KouJumpDiffusion) SimulatePricesBatch(s0, r, t float64, steps, numSimulations int) []float64 {
 	results := make([]float64, numSimulations)
 	var wg sync.WaitGroup
 	numWorkers := runtime.GOMAXPROCS(0)
@@ -159,8 +155,10 @@ func (k *KouJumpDiffusion) SimulatePricesBatch(s0, t float64, steps, numSimulati
 		wg.Add(1)
 		go func(start int) {
 			defer wg.Done()
+			rng := krngPool.Get().(*rand.Rand)
+			defer krngPool.Put(rng)
 			for j := start; j < start+simulationsPerWorker; j++ {
-				results[j] = k.SimulatePrice(s0, t, steps)
+				results[j] = k.SimulatePrice(s0, r, t, steps, rng)
 			}
 		}(i * simulationsPerWorker)
 	}
@@ -170,8 +168,8 @@ func (k *KouJumpDiffusion) SimulatePricesBatch(s0, t float64, steps, numSimulati
 }
 
 // OptionPrice calculates the option price using Monte Carlo simulation
-func (k *KouJumpDiffusion) OptionPrice(s0, strike float64, t float64, isCall bool, numSimulations int) float64 {
-	simulatedPrices := k.SimulatePricesBatch(s0, t, 252, numSimulations)
+func (k *KouJumpDiffusion) OptionPrice(s0, strike, r, t float64, isCall bool, numSimulations int) float64 {
+	simulatedPrices := k.SimulatePricesBatch(s0, r, t, 252, numSimulations)
 
 	var totalPayoff float64
 	var wg sync.WaitGroup
@@ -206,7 +204,7 @@ func (k *KouJumpDiffusion) OptionPrice(s0, strike float64, t float64, isCall boo
 	wg.Wait()
 
 	price := totalPayoff / float64(numSimulations)
-	price *= math.Exp(-k.R * t)
+	price *= math.Exp(-r * t)
 
 	return price
 }

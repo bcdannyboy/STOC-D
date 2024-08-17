@@ -1,6 +1,7 @@
 package probability
 
 import (
+	"math"
 	"sync"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -67,9 +68,9 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		name string
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels) map[string]float64
 	}{
-		{name: "Merton", fn: simulateMertonJumpDiffusion},
-		{name: "Kou", fn: simulateKouJumpDiffusion},
-		{name: "Heston", fn: simulateHeston},
+		// {name: "Merton", fn: simulateMertonJumpDiffusion},
+		// {name: "Kou", fn: simulateKouJumpDiffusion},
+		// {name: "Heston", fn: simulateHeston},
 		{name: "CGMY", fn: simulateCGMY},
 	}
 
@@ -173,7 +174,7 @@ func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, ri
 	profitCount := 0
 
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := merton.SimulatePrice(underlyingPrice, tau, timeSteps, rng)
+		finalPrice := merton.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
@@ -191,11 +192,12 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 	kou := *globalModels.Kou // Create a copy of the global model
 	kou.Sigma = volatility   // Use the provided volatility
 
-	prices := kou.SimulatePricesBatch(underlyingPrice, tau, timeSteps, numSimulations)
-
 	profitCount := 0
-	for _, price := range prices {
-		if models.IsProfitable(spread, price) {
+
+	for i := 0; i < numSimulations; i++ {
+		finalPrice := kou.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
+
+		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
 		}
 	}
@@ -208,15 +210,13 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
 	tau := float64(daysToExpiration) / 365.0
 
-	heston := *globalModels.Heston // Create a copy of the global model
-
-	// Update the initial variance (V0) with the provided volatility
-	heston.V0 = volatility * volatility
+	heston := *globalModels.Heston      // Create a copy of the global model
+	heston.V0 = volatility * volatility // Set initial variance to square of volatility
 
 	profitCount := 0
 
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := heston.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps)
+		finalPrice := heston.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
@@ -233,10 +233,14 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 
 	cgmy := *globalModels.CGMY // Create a copy of the global model
 
+	// Adjust CGMY parameters based on the provided volatility
+	varianceAdjustment := volatility * volatility / (cgmy.C * math.Gamma(2-cgmy.Y) * (math.Pow(cgmy.M, cgmy.Y-2) + math.Pow(cgmy.G, cgmy.Y-2)))
+	cgmy.C *= varianceAdjustment
+
 	profitCount := 0
 
 	for i := 0; i < numSimulations; i++ {
-		finalPrice := cgmy.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps)
+		finalPrice := cgmy.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
