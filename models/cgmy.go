@@ -23,7 +23,6 @@ func NewCGMYModel(c, g, m, y float64) *CGMYModel {
 
 // Characteristic Function incorporating stochastic volatility as per document
 func (m *CGMYModel) CharacteristicFunction(u complex128, t float64, vol float64) complex128 {
-	// Convert m.C to complex128 to match the types
 	c := complex(m.C, 0)
 	mComplex := complex(m.M, 0)
 	gComplex := complex(m.G, 0)
@@ -42,24 +41,26 @@ func (m *CGMYModel) SimulatePrice(s0, r, t float64, steps int, rng *rand.Rand, v
 
 	dt := t / float64(steps)
 	X := 0.0
+	S := s0
 
 	for i := 0; i < steps; i++ {
 		dX := m.generateIncrement(dt, rng, vol[i])
 		X += dX
+		S *= math.Exp((r-0.5*vol[i]*vol[i]-m.calculateCompensator())*dt + dX)
 	}
 
-	return s0 * math.Exp((r-m.calculateCompensator()*t)+X)
+	return S
 }
 
 func (m *CGMYModel) generateIncrement(dt float64, rng *rand.Rand, vol float64) float64 {
 	numJumps := m.samplePoisson(m.C*dt, rng)
-	increment := 0.0
+	increment := vol * math.Sqrt(dt) * rng.NormFloat64() // Add diffusion component
 
 	for i := 0; i < numJumps; i++ {
 		if rng.Float64() < m.M/(m.G+m.M) {
-			increment += m.generatePositiveJump(rng) * vol
+			increment += m.generatePositiveJump(rng)
 		} else {
-			increment += m.generateNegativeJump(rng) * vol
+			increment += m.generateNegativeJump(rng)
 		}
 	}
 
@@ -94,10 +95,8 @@ func (m *CGMYModel) calculateCompensator() float64 {
 func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 	fmt.Println("Starting CGMY calibration...")
 
-	lowerBounds := []float64{0.01, 0.1, 0.1, 0.01}
+	lowerBounds := []float64{0.0001, 0.01, 0.01, 0.01}
 	upperBounds := []float64{100, 100, 100, 1.99}
-
-	initialParams := []float64{1, 5, 5, 0.5}
 
 	objective := func(x []float64) float64 {
 		c, g, m, y := x[0], x[1], x[2], x[3]
@@ -120,14 +119,12 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 			logLikelihood += math.Log(absCF)
 		}
 
-		// Penalty to keep parameters away from bounds
+		// Use log-barrier penalty to keep parameters away from bounds
 		penalty := 0.0
 		for i, val := range x {
-			penalty += math.Pow(val-lowerBounds[i], -2) + math.Pow(upperBounds[i]-val, -2)
+			penalty -= math.Log(val - lowerBounds[i])
+			penalty -= math.Log(upperBounds[i] - val)
 		}
-
-		// Additional penalty for extreme values
-		penalty += math.Pow(c-10, 2)/100 + math.Pow(g-10, 2)/100 + math.Pow(m-10, 2)/100 + math.Pow(y-1, 2)
 
 		return -logLikelihood + penalty
 	}
@@ -136,71 +133,38 @@ func (m *CGMYModel) Calibrate(historicalReturns []float64) error {
 		Func: objective,
 	}
 
-	// Use L-BFGS-B method which respects bounds
-	method := &optimize.LBFGSB{
-		Lmem: 10,
-	}
+	method := &optimize.NelderMead{}
 
-	result, err := optimize.Minimize(problem, initialParams, &optimize.Settings{
-		MajorIterations: 1000,
-		Converger: &optimize.FunctionConverge{
-			Absolute:   1e-8,
-			Relative:   1e-8,
-			Iterations: 1000,
-		},
-	}, method)
-
-	if err != nil {
-		fmt.Printf("Full optimization failed: %v\n", err)
-		fmt.Println("Attempting fallback optimization...")
-		result, err = m.fallbackOptimization(objective, lowerBounds, upperBounds)
-		if err != nil {
-			fmt.Printf("Fallback optimization failed: %v\n", err)
-			fmt.Println("Using backup parameter estimation...")
-			m.backupParameterEstimation(historicalReturns)
-			return nil
-		}
-	}
-
-	m.C, m.G, m.M, m.Y = result.X[0], result.X[1], result.X[2], result.X[3]
-	fmt.Printf("Calibration complete. C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
-	return nil
-}
-
-func (m *CGMYModel) fallbackOptimization(objective func([]float64) float64, lowerBounds, upperBounds []float64) (*optimize.Result, error) {
-	var bestResult *optimize.Result
+	// Use multiple random starts
+	bestParams := make([]float64, 4)
 	bestF := math.Inf(1)
 
-	rng := rand.New(rand.NewSource(uint64(rand.Int63())))
+	for i := 0; i < 100; i++ {
+		initialParams := m.estimateInitialParams(historicalReturns)
 
-	for i := 0; i < 50; i++ {
-		initialParams := make([]float64, 4)
-		for j := range initialParams {
-			initialParams[j] = lowerBounds[j] + rng.Float64()*(upperBounds[j]-lowerBounds[j])
-		}
-
-		method := &optimize.LBFGSB{
-			Lmem: 10,
-		}
-
-		result, err := optimize.Minimize(optimize.Problem{Func: objective}, initialParams, &optimize.Settings{
-			MajorIterations: 500,
+		result, err := optimize.Minimize(problem, initialParams, &optimize.Settings{
+			MajorIterations: 10000,
 		}, method)
 
 		if err == nil && result.F < bestF {
-			bestResult = result
 			bestF = result.F
+			copy(bestParams, result.X)
 		}
 	}
 
-	if bestResult == nil {
-		return nil, fmt.Errorf("fallback optimization failed to find valid parameters")
+	if math.IsInf(bestF, 0) {
+		fmt.Println("Optimization failed to find valid parameters")
+		fmt.Println("Using backup parameter estimation...")
+		m.backupParameterEstimation(historicalReturns)
+	} else {
+		m.C, m.G, m.M, m.Y = bestParams[0], bestParams[1], bestParams[2], bestParams[3]
+		fmt.Printf("Calibration complete. C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
 	}
 
-	return bestResult, nil
+	return nil
 }
 
-func (m *CGMYModel) backupParameterEstimation(historicalReturns []float64) {
+func (m *CGMYModel) estimateInitialParams(historicalReturns []float64) []float64 {
 	var mean, variance, skewness, kurtosis float64
 
 	// Calculate sample moments
@@ -222,15 +186,21 @@ func (m *CGMYModel) backupParameterEstimation(historicalReturns []float64) {
 	kurtosis -= 3 // Excess kurtosis
 
 	// Estimate CGMY parameters based on moments
-	m.Y = math.Max(0.1, math.Min(1.9, 2-2/(1+math.Abs(skewness))))
-	m.C = math.Max(0.01, variance/(math.Gamma(2-m.Y)*2))
-	m.G = math.Max(0.1, math.Sqrt(2*m.C*math.Gamma(2-m.Y)/variance))
-	m.M = m.G
+	y := math.Max(0.1, math.Min(1.9, 2-2/(1+math.Abs(skewness))))
+	c := math.Max(0.01, variance/(math.Gamma(2-y)*2))
+	g := math.Max(0.1, math.Sqrt(2*c*math.Gamma(2-y)/variance))
+	m_param := g // Renamed to avoid confusion with the method receiver
 
 	if skewness < 0 {
-		m.G, m.M = m.M, m.G
+		g, m_param = m_param, g
 	}
 
+	return []float64{c, g, m_param, y}
+}
+
+func (m *CGMYModel) backupParameterEstimation(historicalReturns []float64) {
+	params := m.estimateInitialParams(historicalReturns)
+	m.C, m.G, m.M, m.Y = params[0], params[1], params[2], params[3]
 	fmt.Printf("Backup parameter estimation complete. C=%f, G=%f, M=%f, Y=%f\n", m.C, m.G, m.M, m.Y)
 }
 
@@ -245,7 +215,7 @@ func (m *CGMYModel) OptionPrice(s, k, r, t float64) float64 {
 	for j := 0; j < N; j++ {
 		u := eta * float64(j)
 		complexU := complex(u, 0)
-		characteristicFn := m.CharacteristicFunction(complex(u-(alpha+1), 0), t, 1.0) // Adjusted for stochastic vol
+		characteristicFn := m.CharacteristicFunction(complex(u-(alpha+1), 0), t, 1.0)
 		denominator := complex(alpha*alpha+alpha, 0) - complexU*complexU + complex(0, (2*alpha+1)*u)
 		x[j] = cmplx.Exp(complex(0, -b*u)) * characteristicFn / denominator
 	}

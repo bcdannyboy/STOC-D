@@ -1,7 +1,6 @@
 package probability
 
 import (
-	"math"
 	"sync"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -232,11 +231,6 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 	tau := float64(daysToExpiration) / 365.0
 
 	cgmy := *globalModels.CGMY // Create a copy of the global model
-
-	// Adjust CGMY parameters based on the provided volatility
-	variance := volatility * volatility
-	expectedVariance := cgmy.C * math.Gamma(2-cgmy.Y) * (math.Pow(cgmy.M, cgmy.Y-2) + math.Pow(cgmy.G, cgmy.Y-2))
-	cgmy.C *= variance / expectedVariance
 
 	profitCount := 0
 
