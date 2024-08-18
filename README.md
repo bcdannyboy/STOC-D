@@ -198,7 +198,7 @@ STOC'D plans to implement comprehensive portfolio management features:
 - [x] Implement one-dimensional stochastic models with jumps for price simulation
   - [x] Merton Jump Diffusion Model
   - [x] Kou Jump Diffusion Model
-  - [ ] CGMY Tempered Stable Process Model
+  - [x] CGMY Tempered Stable Process Model
 - [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
   - [ ] Levy Copulas for dependence modelling
 - [ ] Hedging Mechanisms
