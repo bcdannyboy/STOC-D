@@ -16,6 +16,8 @@ STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advance
    - [Multi-Dimensional Stochastic Models](#multi-dimensional-stochastic-models)
    - [Hedging Mechanisms](#hedging-mechanisms)
    - [Monte Carlo Simulation](#monte-carlo-simulation)
+   - [Value at Risk (VaR)](#value-at-risk-var)
+   - [Composite Scoring](#composite-scoring)
 6. [Portfolio Management](#portfolio-management)
 7. [Roadmap](#roadmap)
 
@@ -30,6 +32,7 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 - Utilize advanced stochastic models with jumps for price simulation
 - Identify optimal credit spread opportunities
 - Perform Monte Carlo simulations for probability estimation
+- Calculate Spread Value at Risk (VaR) for risk assessment
 
 ## Installation
 
@@ -177,6 +180,38 @@ STOC'D aims to implement various hedging mechanisms:
 ### Monte Carlo Simulation
 
 STOC'D uses Monte Carlo simulation to estimate the probability of profit for identified credit spreads. This involves simulating thousands of price paths using the stochastic models and calculating the proportion of paths that result in a profitable outcome.
+
+### Value at Risk (VaR)
+
+STOC'D implements Value at Risk (VaR) calculations to assess the potential losses of identified credit spreads:
+
+- VaR is calculated using the Monte Carlo simulation results
+- Both 95% and 99% confidence levels are provided
+- VaR helps quantify the maximum potential loss with a given probability
+
+The VaR calculation is performed as follows:
+
+1. Simulate multiple price paths using the stochastic models
+2. Calculate the profit/loss for each simulated path
+3. Sort the profit/loss results
+4. Determine the VaR at the specified confidence level (e.g., 95th percentile for 95% VaR)
+
+### Composite Scoring
+
+STOC'D uses a composite scoring system to rank and evaluate credit spread opportunities:
+
+- Incorporates multiple factors including probability of profit, VaR, and trading volume
+- Normalizes individual factors to create a balanced score
+- Allows for easy comparison and ranking of different spread opportunities
+
+The composite score is calculated as follows:
+
+1. Normalize the probability of profit (higher is better)
+2. Normalize the VaR (lower is better)
+3. Incorporate the trading volume as a weighting factor
+4. Combine these factors into a single composite score
+
+This scoring system helps traders quickly identify the most promising spread opportunities based on a comprehensive set of criteria.
 
 ## Portfolio Management
 
