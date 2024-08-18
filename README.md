@@ -178,41 +178,6 @@ STOC'D aims to implement various hedging mechanisms:
 
 STOC'D uses Monte Carlo simulation to estimate the probability of profit for identified credit spreads. This involves simulating thousands of price paths using the stochastic models and calculating the proportion of paths that result in a profitable outcome.
 
-### Custom Bessel Functions
-STOC'D implements custom Bessel functions to support various stochastic models. Bessel functions are solutions to Bessel's differential equation and play a crucial role in many areas of mathematical physics and finance.
-
-#### Why Custom Implementations?
-
-- *Independence*: By implementing our own Bessel functions, STOC'D reduces dependencies on external libraries, enhancing portability and control.
-- *Performance*: Custom implementations can be optimized for our specific use cases in financial modeling.
-- *Flexibility*: We can easily modify and extend the functions as needed for different models or improved accuracy.
-- *I couldn't find any better solution*
-
-#### Implemented Functions
-
-##### BesselJ(nu, x float64) float64
-
-Approximates the Bessel function of the first kind.
-
-- *Implementation*: Uses a series expansion for small x and an asymptotic expansion for large x.
-- *Use case*: Often used in option pricing models and in describing oscillatory phenomena.
-
-
-##### BesselI(nu, x float64) float64
-
-Approximates the modified Bessel function of the first kind.
-
-- *Implementation*: Utilizes a series expansion similar to BesselJ but with different coefficients.
-- *Use case*: Frequently appears in the probability density functions of financial models.
-
-
-##### BesselK(nu, x float64) float64
-
-Approximates the modified Bessel function of the second kind.
-
-- *Implementation*: Uses specific formulas for nu = 0 and nu = 1, and a recurrence relation for higher orders.
-- *Use case*: Critical in calculating probabilities and option prices in the Generalized Hyperbolic Model and its special cases like the Normal Inverse Gaussian distribution.
-
 ## Portfolio Management
 
 STOC'D plans to implement comprehensive portfolio management features:
