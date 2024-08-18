@@ -85,7 +85,6 @@ type ProbabilityResult struct {
 	Probabilities      map[string]float64
 	AverageProbability float64
 }
-
 type HestonParams struct {
 	V0    float64 // Initial variance
 	Kappa float64 // Mean reversion speed of variance
