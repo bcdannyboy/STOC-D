@@ -3,6 +3,7 @@ package positions
 import (
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -159,4 +160,20 @@ func minMax(data []float64) (min, max, mean, std float64) {
 	}
 	std = math.Sqrt(sumSq / float64(len(data)))
 	return
+}
+
+func extractOptionPrices(chain map[string]*tradier.OptionChain) []float64 {
+	var prices []float64
+	for _, expiration := range chain {
+		for _, option := range expiration.Options.Option {
+			if last, ok := option.Last.(float64); ok && last > 0 {
+				prices = append(prices, last)
+			} else if lastStr, ok := option.Last.(string); ok {
+				if lastFloat, err := strconv.ParseFloat(lastStr, 64); err == nil && lastFloat > 0 {
+					prices = append(prices, lastFloat)
+				}
+			}
+		}
+	}
+	return prices
 }

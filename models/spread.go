@@ -59,6 +59,7 @@ type SpreadWithProbabilities struct {
 	Spread       OptionSpread
 	Probability  ProbabilityResult
 	MeetsRoR     bool
+	CGMYParams   CGMYParams
 	MertonParams struct {
 		Lambda float64 // Intensity of jumps
 		Mu     float64 // Drift of jumps

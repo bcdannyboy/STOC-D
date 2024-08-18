@@ -46,7 +46,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Average Implied Volatility: %.4f\n", avgIV)
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
-	calibrateGlobalModels(history, chain, riskFreeRate, yzVolatilities, rsVolatilities)
+	calibrateGlobalModels(history, chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities)
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
@@ -111,7 +111,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	return spreads
 }
 
-func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64) {
+func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64) {
 	if modelsCalibrated {
 		return // Models already calibrated
 	}
@@ -147,6 +147,17 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	fmt.Printf("Calibrating Kou model...\n")
 	kouModel := models.NewKouJumpDiffusion(riskFreeRate, avgVol, marketPrices, 1.0/252.0)
 	globalModels.Kou = kouModel
+
+	// Calibrate CGMY model
+	fmt.Printf("Calibrating CGMY model...\n")
+	cgmyProcess := models.NewCGMYProcess(1, 1, 1, 0.5) // Initial guess
+	cgmymarketPrices := extractOptionPrices(chain)
+	cgmys0 := underlyingPrice
+	cgmyt := 1.0   // Use 1 year as a default time to maturity
+	isCall := true // Assume we're using call options for calibration
+
+	cgmyProcess.Calibrate(cgmymarketPrices, strikes, cgmys0, riskFreeRate, cgmyt, isCall)
+	globalModels.CGMY = cgmyProcess
 
 	// Calibrate Heston model
 	fmt.Printf("Calibrating Heston model...\n")

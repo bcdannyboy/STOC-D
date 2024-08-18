@@ -1,6 +1,7 @@
 package probability
 
 import (
+	"math"
 	"sync"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -24,6 +25,7 @@ type GlobalModels struct {
 	Heston *models.HestonModel
 	Merton *models.MertonJumpDiffusion
 	Kou    *models.KouJumpDiffusion
+	CGMY   *models.CGMYProcess
 }
 
 func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels, avgVol float64) models.SpreadWithProbabilities {
@@ -69,6 +71,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		{name: "Merton", fn: simulateMertonJumpDiffusion},
 		{name: "Kou", fn: simulateKouJumpDiffusion},
 		{name: "Heston", fn: simulateHeston},
+		{name: "CGMY", fn: simulateCGMY},
 	}
 
 	results := make(map[string]float64, len(volatilities)*len(simulationFuncs))
@@ -131,6 +134,13 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		Theta: globalModels.Heston.Theta,
 		Xi:    globalModels.Heston.Xi,
 		Rho:   globalModels.Heston.Rho,
+	}
+
+	result.CGMYParams = models.CGMYParams{
+		C: globalModels.CGMY.Params.C,
+		G: globalModels.CGMY.Params.G,
+		M: globalModels.CGMY.Params.M,
+		Y: globalModels.CGMY.Params.Y,
 	}
 
 	result.VolatilityInfo = models.VolatilityInfo{
@@ -207,6 +217,31 @@ func simulateHeston(spread models.OptionSpread, underlyingPrice, riskFreeRate, v
 
 	for i := 0; i < numSimulations; i++ {
 		finalPrice := heston.SimulatePrice(underlyingPrice, riskFreeRate, tau, timeSteps, rng)
+
+		if models.IsProfitable(spread, finalPrice) {
+			profitCount++
+		}
+	}
+
+	return map[string]float64{
+		"probability": float64(profitCount) / float64(numSimulations),
+	}
+}
+
+func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels) map[string]float64 {
+	tau := float64(daysToExpiration) / 365.0
+
+	cgmy := *globalModels.CGMY // Create a copy of the global model
+
+	// Adjust CGMY parameters based on the provided volatility
+	volAdjustment := volatility / math.Sqrt(cgmy.Params.C*math.Gamma(2-cgmy.Params.Y)*(1/math.Pow(cgmy.Params.M, 2-cgmy.Params.Y)+1/math.Pow(cgmy.Params.G, 2-cgmy.Params.Y)))
+	cgmy.Params.C *= volAdjustment
+
+	profitCount := 0
+
+	for i := 0; i < numSimulations; i++ {
+		path := cgmy.SimulatePath(tau, tau/timeSteps, rng) // Pass the rng here
+		finalPrice := underlyingPrice * math.Exp((riskFreeRate-0.5*volatility*volatility)*tau+path[len(path)-1])
 
 		if models.IsProfitable(spread, finalPrice) {
 			profitCount++
