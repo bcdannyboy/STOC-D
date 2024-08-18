@@ -56,11 +56,14 @@ type VolatilityInfo struct {
 }
 
 type SpreadWithProbabilities struct {
-	Spread       OptionSpread
-	Probability  ProbabilityResult
-	MeetsRoR     bool
-	CGMYParams   CGMYParams
-	MertonParams struct {
+	Spread         OptionSpread
+	VaR95          float64
+	VaR99          float64
+	CompositeScore float64
+	Probability    ProbabilityResult
+	MeetsRoR       bool
+	CGMYParams     CGMYParams
+	MertonParams   struct {
 		Lambda float64 // Intensity of jumps
 		Mu     float64 // Drift of jumps
 		Delta  float64 // Volatility of jumps

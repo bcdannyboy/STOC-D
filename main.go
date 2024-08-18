@@ -24,14 +24,14 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"RDDT"}
+	symbols := []string{"COST"}
 	indicators := map[string]int{
-		"RDDT": 1,
+		"COST": 1,
 	}
 
 	minDTE := 5
 	maxDTE := 45
-	rfr := 0.0394
+	rfr := 0.0389
 	minRoR := 0.2
 
 	today := time.Now().Format("2006-01-02")
@@ -90,8 +90,22 @@ func main() {
 		return
 	}
 
+	for i := range allSpreads {
+		prob := allSpreads[i].Probability.AverageProbability
+		vol := float64(allSpreads[i].Spread.ShortLeg.Option.Volume + allSpreads[i].Spread.LongLeg.Option.Volume)
+		var95 := allSpreads[i].VaR95
+
+		// Avoid division by zero
+		if var95 == 0 {
+			var95 = 0.000001
+		}
+
+		// Calculate the composite score
+		allSpreads[i].CompositeScore = (prob * vol) * (1 / var95)
+	}
+
 	sort.Slice(allSpreads, func(i, j int) bool {
-		return allSpreads[i].Probability.AverageProbability > allSpreads[j].Probability.AverageProbability
+		return allSpreads[i].CompositeScore > allSpreads[j].CompositeScore
 	})
 
 	if len(allSpreads) > 10 {
