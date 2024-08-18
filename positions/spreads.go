@@ -199,6 +199,15 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var spreads []models.SpreadWithProbabilities
 	var processed int
 	for spread := range resultChan {
+		// Skip spreads with zero volume in either leg
+		if spread.Spread.ShortLeg.Option.Volume == 0 || spread.Spread.LongLeg.Option.Volume == 0 {
+			processed++
+			if processed >= totalJobs {
+				break
+			}
+			continue
+		}
+
 		if isSpreadViable(spread, minReturnOnRisk) && spread.MeetsRoR {
 			spreads = append(spreads, spread)
 		}

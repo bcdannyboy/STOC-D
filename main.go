@@ -24,13 +24,13 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"COST"}
+	symbols := []string{"SPY"}
 	indicators := map[string]int{
-		"COST": 1,
+		"SPY": 1,
 	}
 
 	minDTE := 5
-	maxDTE := 45
+	maxDTE := 21
 	rfr := 0.0389
 	minRoR := 0.2
 
@@ -101,7 +101,10 @@ func main() {
 		}
 
 		// Calculate the composite score
-		allSpreads[i].CompositeScore = (prob * vol) * (1 / var95)
+		// Higher probability is better
+		// Higher volume is better
+		// Lower VaR is better
+		allSpreads[i].CompositeScore = (prob * vol) / var95
 	}
 
 	sort.Slice(allSpreads, func(i, j int) bool {
