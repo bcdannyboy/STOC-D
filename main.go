@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"sync"
@@ -90,21 +91,32 @@ func main() {
 		return
 	}
 
+	// First, find the min and max values across all spreads
+	var minProb, maxProb, minVaR, maxVaR float64
+	for _, spread := range allSpreads {
+		prob := spread.Probability.AverageProbability
+		var95 := math.Abs(spread.VaR95) // Use absolute value of VaR
+
+		minProb = math.Min(minProb, prob)
+		maxProb = math.Max(maxProb, prob)
+		minVaR = math.Min(minVaR, var95)
+		maxVaR = math.Max(maxVaR, var95)
+	}
+
+	// Then, calculate the composite score for each spread
 	for i := range allSpreads {
 		prob := allSpreads[i].Probability.AverageProbability
+		var95 := math.Abs(allSpreads[i].VaR95)
 		vol := float64(allSpreads[i].Spread.ShortLeg.Option.Volume + allSpreads[i].Spread.LongLeg.Option.Volume)
-		var95 := allSpreads[i].VaR95
 
-		// Avoid division by zero
-		if var95 == 0 {
-			var95 = 0.000001
-		}
+		// Normalize probability (higher is better)
+		normProb := (prob - minProb) / (maxProb - minProb)
 
-		// Calculate the composite score
-		// Higher probability is better
-		// Higher volume is better
-		// Lower VaR is better
-		allSpreads[i].CompositeScore = (prob * vol) / var95
+		// Normalize VaR (lower is better)
+		normVaR := 1 - ((var95 - minVaR) / (maxVaR - minVaR))
+
+		// Calculate composite score
+		allSpreads[i].CompositeScore = (normProb + normVaR) * vol
 	}
 
 	sort.Slice(allSpreads, func(i, j int) bool {
