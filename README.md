@@ -20,8 +20,6 @@ STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advance
    - [Risk Assessment](#risk-assessment)
    - [Scoring and Ranking](#scoring-and-ranking)
 6. [Future Enhancements](#future-enhancements)
-7. [Contributing](#contributing)
-8. [License](#license)
 
 ## Introduction
 
