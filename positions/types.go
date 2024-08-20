@@ -34,20 +34,14 @@ type ParkinsonsResult struct {
 	Difference        float64 // Parkinson's Number - (1.67 * Standard Deviation)
 }
 
-type GarmanKlassResult struct {
-	Period     string
-	Volatility float64
-}
-
 type SpreadLeg struct {
-	Option            tradier.Option
-	BSMResult         BSMResult
-	GarmanKlassResult GarmanKlassResult
-	BidImpliedVol     float64
-	AskImpliedVol     float64
-	MidImpliedVol     float64
-	ExtrinsicValue    float64
-	IntrinsicValue    float64
+	Option         tradier.Option
+	BSMResult      BSMResult
+	BidImpliedVol  float64
+	AskImpliedVol  float64
+	MidImpliedVol  float64
+	ExtrinsicValue float64
+	IntrinsicValue float64
 }
 
 type OptionSpread struct {

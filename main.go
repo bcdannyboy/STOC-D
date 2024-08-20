@@ -33,7 +33,7 @@ func main() {
 	minDTE := 5
 	maxDTE := 21
 	rfr := 0.0389
-	minRoR := 0.2
+	minRoR := 0.175
 
 	today := time.Now().Format("2006-01-02")
 	tenyrsago := time.Now().AddDate(-10, 0, 0).Format("2006-01-02")

@@ -183,7 +183,7 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	var wg sync.WaitGroup
 	for i := 0; i < workerPoolSize; i++ {
 		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, underlyingPrice, riskFreeRate, minReturnOnRisk, history, localVolSurface, chain, avgVol)
+		go worker(jobChan, resultChan, &wg, minReturnOnRisk, history, chain, avgVol)
 	}
 
 	go func() {
@@ -268,13 +268,10 @@ func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFr
 	}
 }
 
-func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, underlyingPrice, riskFreeRate, minReturnOnRisk float64, history tradier.QuoteHistory, localVolSurface models.VolatilitySurface, chain map[string]*tradier.OptionChain, avgVol float64) {
+func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilities, wg *sync.WaitGroup, minReturnOnRisk float64, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, avgVol float64) {
 	defer wg.Done()
 	for j := range jobQueue {
-		gkVol := j.yzVolatilities[j.option1.ExpirationDate]
-		parkinsonVol := j.rsVolatilities[j.option1.ExpirationDate]
-
-		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate, gkVol, parkinsonVol)
+		spread := createOptionSpread(j.option1, j.option2, j.underlyingPrice, j.riskFreeRate)
 		returnOnRisk := calculateReturnOnRisk(spread)
 
 		if returnOnRisk >= minReturnOnRisk {
@@ -290,7 +287,7 @@ func worker(jobQueue <-chan job, resultChan chan<- models.SpreadWithProbabilitie
 	}
 }
 
-func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, gkVolatility, parkinsonVolatility float64) models.OptionSpread {
+func createOptionSpread(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate float64) models.OptionSpread {
 	shortLeg := createSpreadLeg(shortOpt, underlyingPrice, riskFreeRate)
 	longLeg := createSpreadLeg(longOpt, underlyingPrice, riskFreeRate)
 

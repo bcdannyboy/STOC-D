@@ -63,20 +63,6 @@ func calculateVega(option tradier.Option, underlyingPrice, riskFreeRate, volatil
 	return S * normalPDF(d1) * math.Sqrt(T)
 }
 
-func calculateShadowGammas(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, volatility float64) (float64, float64) {
-	shortUpGamma, shortDownGamma := ShadowGamma(shortOpt, underlyingPrice, riskFreeRate, volatility, 0.01, 0.05)
-	longUpGamma, longDownGamma := ShadowGamma(longOpt, underlyingPrice, riskFreeRate, volatility, 0.01, 0.05)
-
-	return shortUpGamma - longUpGamma, shortDownGamma - longDownGamma
-}
-
-func calculateSkewGamma(shortOpt, longOpt tradier.Option, underlyingPrice, riskFreeRate, volatility float64) float64 {
-	shortSkewGamma := SkewGamma(shortOpt, underlyingPrice, riskFreeRate, volatility, 0.01)
-	longSkewGamma := SkewGamma(longOpt, underlyingPrice, riskFreeRate, volatility, 0.01)
-
-	return shortSkewGamma - longSkewGamma
-}
-
 func calculateSpreadGreeks(shortLeg, longLeg models.SpreadLeg) models.BSMResult {
 	return models.BSMResult{
 		Price: shortLeg.BSMResult.Price - longLeg.BSMResult.Price,

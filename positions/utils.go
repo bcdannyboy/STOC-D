@@ -87,20 +87,6 @@ func extractHistoricalPrices(history tradier.QuoteHistory) []float64 {
 	return prices
 }
 
-func scaleHistoricalPrices(prices []float64, factor float64) []float64 {
-	scaledPrices := make([]float64, len(prices))
-	for i, price := range prices {
-		if i == 0 {
-			scaledPrices[i] = price
-		} else {
-			returnRate := math.Log(price / prices[i-1])
-			scaledReturn := returnRate * factor
-			scaledPrices[i] = scaledPrices[i-1] * math.Exp(scaledReturn)
-		}
-	}
-	return scaledPrices
-}
-
 func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
 	strikeSet := make(map[float64]struct{})
 
@@ -118,48 +104,6 @@ func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
 	sort.Float64s(strikes)
 
 	return strikes
-}
-
-func calculateHistoricalReturns(history tradier.QuoteHistory) []float64 {
-	returns := make([]float64, len(history.History.Day)-1)
-	for i := 1; i < len(history.History.Day); i++ {
-		prevClose := history.History.Day[i-1].Close
-		currClose := history.History.Day[i].Close
-		returns[i-1] = math.Log(currClose / prevClose)
-	}
-	return returns
-}
-
-func calculateLogReturns(prices []float64) []float64 {
-	logReturns := make([]float64, len(prices)-1)
-	for i := 1; i < len(prices); i++ {
-		logReturns[i-1] = math.Log(prices[i] / prices[i-1])
-	}
-	return logReturns
-}
-
-func minMax(data []float64) (min, max, mean, std float64) {
-	if len(data) == 0 {
-		return
-	}
-	min, max = data[0], data[0]
-	sum := 0.0
-	for _, v := range data {
-		if v < min {
-			min = v
-		}
-		if v > max {
-			max = v
-		}
-		sum += v
-	}
-	mean = sum / float64(len(data))
-	sumSq := 0.0
-	for _, v := range data {
-		sumSq += (v - mean) * (v - mean)
-	}
-	std = math.Sqrt(sumSq / float64(len(data)))
-	return
 }
 
 func extractOptionPrices(chain map[string]*tradier.OptionChain) []float64 {

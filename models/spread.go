@@ -39,11 +39,6 @@ type BSMResult struct {
 	SkewGamma         float64
 }
 
-type GarmanKlassResult struct {
-	Period     string
-	Volatility float64
-}
-
 type VolatilityInfo struct {
 	ShortLegVol         float64
 	LongLegVol          float64

@@ -39,7 +39,7 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 1. Clone the repository:
 
    ```
-   git clone https://github.com/bcdannyboy/stocd.git
+   git clone https://github.com/bcdannyboy/STOC-D.git
    ```
 
 2. Install dependencies:
