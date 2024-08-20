@@ -38,16 +38,19 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 ## Installation
 
 1. Clone the repository:
+
    ```
    git clone https://github.com/bcdannyboy/STOC-D.git
    ```
 
 2. Install dependencies:
+
    ```
    go mod download
    ```
 
 3. Set up your Tradier API key in a `.env` file:
+
    ```
    TRADIER_KEY=your_api_key_here
    ```
@@ -124,7 +127,22 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 ## Future Enhancements
 
-These enhancements are in no particular order
+- [ ] Expand Risk Management Tools
+  - [ ] Implement Expected Shortfall (ES)
+  - [ ] Develop stress testing scenarios
+    - [ ] Create Monte Carlo-based stress testing
+  - [ ] Add liquidity risk assessment
+    - [ ] Develop bid-ask spread analysis for options
+
+- [ ] Integrate Advanced Volatility Modeling
+  - [ ] Implement GARCH models
+    - [ ] Develop GARCH(1,1) and EGARCH models
+    - [ ] Create volatility forecasting functions
+  - [ ] Develop regime-switching models
+    - [ ] Implement Markov-switching GARCH
+    - [ ] Create hidden Markov model for volatility regimes
+  - [ ] Enhance local volatility calculations
+    - [ ] Improve fitting and interpolation techniques for vol surface
 
 - [ ] Expand One-Dimensional Stochastic Models
   - [ ] Implement Variance Gamma model
@@ -139,27 +157,19 @@ These enhancements are in no particular order
   - [ ] Create multi-asset option pricing models
     - [ ] Implement basket option pricing
 
-- [ ] Integrate Advanced Volatility Modeling
-  - [ ] Implement GARCH models
-    - [ ] Develop GARCH(1,1) and EGARCH models
-    - [ ] Create volatility forecasting functions
-  - [ ] Develop regime-switching models
-    - [ ] Implement Markov-switching GARCH
-    - [ ] Create hidden Markov model for volatility regimes
-  - [ ] Enhance local volatility calculations
-    - [ ] Improve interpolation techniques for vol surface
-    - [ ] Develop more robust fitting algorithms
-
 - [ ] Improve Greeks calculations
   - [ ] Add vomma and vanna calculations
   - [ ] Implement numerical methods for higher-order Greeks
 
-- [ ] Expand Risk Management Tools
-  - [ ] Implement Expected Shortfall (ES)
-  - [ ] Develop stress testing scenarios
-    - [ ] Create Monte Carlo-based stress testing
-  - [ ] Add liquidity risk assessment
-    - [ ] Develop bid-ask spread analysis for options
+  - [ ] Implement Advanced Hedging Strategies
+  - [ ] Develop Options Greeks hedging
+    - [ ] Implement delta-gamma hedging algorithms
+    - [ ] Create vega hedging strategies
+  - [ ] Implement Mean-Variance hedging
+    - [ ] Develop quadratic hedging techniques
+    - [ ] Create hedging performance metrics
+  - [ ] Create dynamic hedging strategies
+    - [ ] Implement adaptive hedging based on market conditions
 
 - [ ] Improve Spread Identification and Analysis
   - [ ] Implement more spread strategies
@@ -177,13 +187,3 @@ These enhancements are in no particular order
   - [ ] Create portfolio-level tools
     - [ ] Develop portfolio VaR and ES calculations
     - [ ] Implement portfolio optimization algorithms
-
-- [ ] Implement Advanced Hedging Strategies
-  - [ ] Develop Options Greeks hedging
-    - [ ] Implement delta-gamma hedging algorithms
-    - [ ] Create vega hedging strategies
-  - [ ] Implement Mean-Variance hedging
-    - [ ] Develop quadratic hedging techniques
-    - [ ] Create hedging performance metrics
-  - [ ] Create dynamic hedging strategies
-    - [ ] Implement adaptive hedging based on market conditions
