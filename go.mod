@@ -3,7 +3,6 @@ module github.com/bcdannyboy/stocd
 go 1.20
 
 require (
-	github.com/idavydov/go-lbfgsb v0.1.6
 	github.com/joho/godotenv v1.5.1
 	github.com/xhhuango/json v1.19.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
