@@ -11,15 +11,17 @@ STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advance
 3. [Installation](#installation)
 4. [Usage](#usage)
 5. [Technical Details](#technical-details)
+   - [Data Fetching](#data-fetching)
    - [Volatility Estimation](#volatility-estimation)
-   - [One-Dimensional Stochastic Models](#one-dimensional-stochastic-models)
-   - [Multi-Dimensional Stochastic Models](#multi-dimensional-stochastic-models)
-   - [Hedging Mechanisms](#hedging-mechanisms)
-   - [Monte Carlo Simulation](#monte-carlo-simulation)
-   - [Value at Risk (VaR)](#value-at-risk-var)
-   - [Composite Scoring](#composite-scoring)
-6. [Portfolio Management](#portfolio-management)
-7. [Roadmap](#roadmap)
+   - [Stochastic Models](#stochastic-models)
+   - [Option Pricing](#option-pricing)
+   - [Spread Identification](#spread-identification)
+   - [Probability Calculation](#probability-calculation)
+   - [Risk Assessment](#risk-assessment)
+   - [Scoring and Ranking](#scoring-and-ranking)
+6. [Future Enhancements](#future-enhancements)
+7. [Contributing](#contributing)
+8. [License](#license)
 
 ## Introduction
 
@@ -29,27 +31,25 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 
 - Fetch and analyze historical price data and options chains
 - Implement multiple volatility estimation techniques
-- Utilize advanced stochastic models with jumps for price simulation
+- Utilize advanced stochastic models for price simulation
 - Identify optimal credit spread opportunities
 - Perform Monte Carlo simulations for probability estimation
-- Calculate Spread Value at Risk (VaR) for risk assessment
+- Calculate Value at Risk (VaR) for risk assessment
+- Score and rank spread opportunities based on multiple factors
 
 ## Installation
 
 1. Clone the repository:
-
    ```
    git clone https://github.com/bcdannyboy/STOC-D.git
    ```
 
 2. Install dependencies:
-
    ```
    go mod download
    ```
 
 3. Set up your Tradier API key in a `.env` file:
-
    ```
    TRADIER_KEY=your_api_key_here
    ```
@@ -66,180 +66,126 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 ## Technical Details
 
+### Data Fetching
+
+- Utilizes the Tradier API to fetch historical price data, options chains, and price statistics
+- Implements functions to retrieve quotes, options expirations, and full options chains
+
 ### Volatility Estimation
 
-STOC'D implements several volatility estimation techniques:
+1. **Yang-Zhang Volatility**: Calculates volatility using opening, closing, high, and low prices, accounting for overnight jumps.
 
-1. **Yang-Zhang Volatility**: This method provides a more accurate estimation of volatility by considering opening, closing, high, and low prices. It's particularly useful for assets with significant overnight price jumps.
+2. **Rogers-Satchell Volatility**: Estimates volatility using high, low, opening, and closing prices, independent of price drift.
 
-   The Yang-Zhang estimator is calculated as:
+3. **Local Volatility Surface**: Creates a volatility surface based on option prices across different strikes and expirations.
 
-   ```
-   σ_YZ^2 = σ_O^2 + k * σ_C^2 + (1 - k) * σ_RS^2
-   ```
+4. **Implied Volatility**: Calculates implied volatility for individual options using the Black-Scholes-Merton model.
 
-   Where σ_O^2 is the opening price volatility, σ_C^2 is the closing price volatility, σ_RS^2 is the Rogers-Satchell volatility, and k is a weighting factor.
+5. **Historical Volatility**: Computes historical volatility from past price data.
 
-2. **Rogers-Satchell Volatility**: This estimator is drift-independent and uses high, low, opening, and closing prices.
+### Stochastic Models
 
-   The Rogers-Satchell volatility is calculated as:
+1. **Black-Scholes-Merton (BSM) Model**: Implements the classic option pricing model for European options.
 
-   ```
-   σ_RS^2 = ln(H/C) * ln(H/O) + ln(L/C) * ln(L/O)
-   ```
+2. **Heston Stochastic Volatility Model**: Simulates price paths with mean-reverting stochastic volatility.
 
-   Where H, L, O, C are the high, low, opening, and closing prices respectively.
+3. **Merton Jump Diffusion Model**: Incorporates jumps in the asset price process.
 
-3. **Local Volatility Surface**: This method creates a volatility surface based on option prices across different strikes and expirations.
+4. **Kou Jump Diffusion Model**: Uses a double exponential distribution for jump sizes.
 
-   The local volatility is interpolated using:
+5. **CGMY (Carr-Geman-Madan-Yor) Model**: Implements a tempered stable process allowing for infinite activity of small jumps and finite activity of large jumps.
 
-   ```
-   σ_local(K, T) = Interpolate(K, T, σ_implied)
-   ```
+### Option Pricing
 
-   Where K is the strike price, T is the time to expiration, and σ_implied is the implied volatility from market prices.
+- Implements the Black-Scholes-Merton formula for European option pricing
+- Calculates option Greeks (Delta, Gamma, Theta, Vega, Rho)
+- Computes implied volatility using numerical methods (Newton-Raphson)
 
-### One-Dimensional Stochastic Models
+### Spread Identification
 
-STOC'D utilizes the following one-dimensional stochastic models for price simulation:
+- Identifies potential Bull Put and Bear Call spread opportunities
+- Filters spreads based on minimum Days to Expiration (DTE) and maximum DTE
+- Calculates spread credit, max risk, and return on risk (ROR)
 
-1. **Heston Stochastic Volatility Model**: This model allows for mean-reverting stochastic volatility.
+### Probability Calculation
 
-   The Heston model is defined by the following stochastic differential equations:
+- Performs Monte Carlo simulations using various stochastic models
+- Estimates probability of profit for identified spreads
+- Incorporates multiple volatility estimates in simulations
 
-   ```
-   dS(t) = μS(t)dt + √v(t)S(t)dW_1(t)
-   dv(t) = κ(θ - v(t))dt + ξ√v(t)dW_2(t)
-   ```
+### Risk Assessment
 
-   Where S(t) is the asset price, v(t) is the variance, μ is the drift, κ is the rate of mean reversion, θ is the long-term variance, ξ is the volatility of volatility, and W_1 and W_2 are Wiener processes with correlation ρ.
+- Calculates Value at Risk (VaR) at 95% and 99% confidence levels
+- Computes potential profit/loss for simulated price paths
 
-2. **Merton Jump Diffusion Model**: This model incorporates jumps in the asset price.
+### Scoring and Ranking
 
-   The Merton jump diffusion model is defined as:
-
-   ```
-   dS(t) = (μ - λk)S(t)dt + σS(t)dW(t) + J(t)S(t)dN(t)
-   ```
-
-   Where λ is the average number of jumps per unit time, k is the average jump size, J(t) is the jump size (typically log-normally distributed), and N(t) is a Poisson process.
-
-3. **Kou Jump Diffusion Model**: Similar to the Merton model, but with a double exponential distribution for jump sizes.
-
-   The Kou model is defined similarly to the Merton model, but with a different jump size distribution:
-
-   ```
-   J(t) = exp(Y) - 1
-   ```
-
-   Where Y follows a double exponential distribution.
-
-4. **CGMY Tempered Stable Process Model**: This model allows for infinite activity of small jumps and finite activity of large jumps.
-
-   The CGMY process is defined by its characteristic function:
-
-   ```
-   φ(u) = exp(CΓ(-Y)[(M - iu)^Y - M^Y + (G + iu)^Y - G^Y])
-   ```
-
-   Where C, G, M, and Y are parameters controlling the process behavior.
-
-### Multi-Dimensional Stochastic Models
-
-STOC'D plans to implement multi-dimensional stochastic models for price simulation and dependence modeling:
-
-1. **Levy Copulas**: These will be used for dependence modeling between multiple assets, allowing for more accurate portfolio simulations.
-
-   A Lévy copula C for a d-dimensional Lévy process X = (X_1, ..., X_d) is defined as:
-
-   ```
-   C(u_1, ..., u_d) = U(F_1^{-1}(u_1), ..., F_d^{-1}(u_d))
-   ```
-
-   Where U is the tail integral of X and F_i^{-1} are the inverse marginal tail integrals.
-
-### Hedging Mechanisms
-
-STOC'D aims to implement various hedging mechanisms:
-
-1. **Options Greeks Hedging**: This involves using the Greeks (delta, gamma, vega, theta) to create a hedged portfolio.
-
-   For example, delta-hedging involves maintaining a position of -Δ in the underlying for each long option, where Δ is the first derivative of the option price with respect to the underlying price.
-
-2. **Mean-Variance Hedging**: This approach aims to find the self-financing strategy that minimizes the expected squared hedging error.
-
-   The optimal strategy ξ* is the solution to:
-
-   ```
-   min_ξ E[(H - (x + ∫_0^T ξ_t dS_t))^2]
-   ```
-
-   Where H is the payoff to be hedged, x is the initial capital, and S is the price process.
-
-### Monte Carlo Simulation
-
-STOC'D uses Monte Carlo simulation to estimate the probability of profit for identified credit spreads. This involves simulating thousands of price paths using the stochastic models and calculating the proportion of paths that result in a profitable outcome.
-
-### Value at Risk (VaR)
-
-STOC'D implements Value at Risk (VaR) calculations to assess the potential losses of identified credit spreads:
-
-- VaR is calculated using the Monte Carlo simulation results
-- Both 95% and 99% confidence levels are provided
-- VaR helps quantify the maximum potential loss with a given probability
-
-The VaR calculation is performed as follows:
-
-1. Simulate multiple price paths using the stochastic models
-2. Calculate the profit/loss for each simulated path
-3. Sort the profit/loss results
-4. Determine the VaR at the specified confidence level (e.g., 95th percentile for 95% VaR)
-
-### Composite Scoring
-
-STOC'D uses a composite scoring system to rank and evaluate credit spread opportunities:
-
-- Incorporates multiple factors including probability of profit, VaR, and trading volume
+- Implements a composite scoring system considering probability of profit, VaR, and trading volume
 - Normalizes individual factors to create a balanced score
-- Allows for easy comparison and ranking of different spread opportunities
+- Ranks spread opportunities based on the composite score
 
-The composite score is calculated as follows:
+## Future Enhancements
 
-1. Normalize the probability of profit (higher is better)
-2. Normalize the VaR (lower is better)
-3. Incorporate the trading volume as a weighting factor
-4. Combine these factors into a single composite score
+These enhancements are in no particular order
 
-This scoring system helps traders quickly identify the most promising spread opportunities based on a comprehensive set of criteria.
+- [ ] Expand One-Dimensional Stochastic Models
+  - [ ] Implement Variance Gamma model
+  - [ ] Add Normal Inverse Gaussian model
+  - [ ] Enhance existing model calibrations
 
-## Portfolio Management
+- [ ] Develop Multi-Dimensional Stochastic Modeling
+  - [ ] Implement Lévy Copulas for multi-asset correlation modeling
+  - [ ] Extend Monte Carlo for multiple assets
+    - [ ] Implement correlated asset price simulations
+    - [ ] Develop multi-asset path generation algorithms
+  - [ ] Create multi-asset option pricing models
+    - [ ] Implement basket option pricing
 
-STOC'D plans to implement comprehensive portfolio management features:
+- [ ] Integrate Advanced Volatility Modeling
+  - [ ] Implement GARCH models
+    - [ ] Develop GARCH(1,1) and EGARCH models
+    - [ ] Create volatility forecasting functions
+  - [ ] Develop regime-switching models
+    - [ ] Implement Markov-switching GARCH
+    - [ ] Create hidden Markov model for volatility regimes
+  - [ ] Enhance local volatility calculations
+    - [ ] Improve interpolation techniques for vol surface
+    - [ ] Develop more robust fitting algorithms
 
-1. **Position Add / Close Capabilities**: Ability to add new positions or close existing ones, including calculation of P&L and impact on overall portfolio risk metrics.
+- [ ] Improve Greeks calculations
+  - [ ] Add vomma and vanna calculations
+  - [ ] Implement numerical methods for higher-order Greeks
 
-2. **Historical Position Tracking**: Keep track of all historical positions for analysis and reporting, including time series of Greeks and risk exposures.
+- [ ] Expand Risk Management Tools
+  - [ ] Implement Expected Shortfall (ES)
+  - [ ] Develop stress testing scenarios
+    - [ ] Create Monte Carlo-based stress testing
+  - [ ] Add liquidity risk assessment
+    - [ ] Develop bid-ask spread analysis for options
 
-3. **Profit / Loss Tracking**: Real-time and historical profit/loss tracking for individual positions and the overall portfolio, including unrealized and realized P&L, and performance attribution.
+- [ ] Improve Spread Identification and Analysis
+  - [ ] Implement more spread strategies
+    - [ ] Add iron condor identification algorithm
+    - [ ] Develop butterfly spread analysis
+  - [ ] Enhance spread scoring system
+    - [ ] Develop dynamic weighting based on market conditions
 
-## Roadmap
+- [ ] Develop Comprehensive Portfolio Management
+  - [ ] Implement position management
+    - [ ] Develop add/close position functions with P&L tracking
+    - [ ] Create position sizing algorithms
+  - [ ] Develop historical tracking and analysis
+    - [ ] Implement time series analysis of portfolio performance
+  - [ ] Create portfolio-level tools
+    - [ ] Develop portfolio VaR and ES calculations
+    - [ ] Implement portfolio optimization algorithms
 
-- [x] Implement volatility estimation techniques
-  - [x] Yang-Zhang Volatility
-  - [x] Rogers-Satchell Volatility
-  - [x] Local Volatility Surface
-  - [x] Heston Stochastic Volatility Model
-- [x] Implement one-dimensional stochastic models with jumps for price simulation
-  - [x] Merton Jump Diffusion Model
-  - [x] Kou Jump Diffusion Model
-  - [x] CGMY Tempered Stable Process Model
-- [ ] Implement multi-dimensional stochastic models with jumps for price simulation and dependence modelling
-  - [ ] Levy Copulas for dependence modelling
-- [ ] Hedging Mechanisms
-  - [ ] Options Greeks Hedging
-  - [ ] Mean-Variance Hedging
-- [ ] Add portfolio management
-  - [ ] Position add / close capabilities
-  - [ ] Historical position tracking
-  - [ ] Profit / loss tracking
+- [ ] Implement Advanced Hedging Strategies
+  - [ ] Develop Options Greeks hedging
+    - [ ] Implement delta-gamma hedging algorithms
+    - [ ] Create vega hedging strategies
+  - [ ] Implement Mean-Variance hedging
+    - [ ] Develop quadratic hedging techniques
+    - [ ] Create hedging performance metrics
+  - [ ] Create dynamic hedging strategies
+    - [ ] Implement adaptive hedging based on market conditions
