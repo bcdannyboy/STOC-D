@@ -127,63 +127,91 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 ## Future Enhancements
 
-- [ ] Expand Risk Management Tools
-  - [ ] Implement Expected Shortfall (ES)
-  - [ ] Develop stress testing scenarios
-    - [ ] Create Monte Carlo-based stress testing
-  - [ ] Add liquidity risk assessment
-    - [ ] Develop bid-ask spread analysis for options
+### Expand Risk Management Tools
 
-- [ ] Integrate Advanced Volatility Modeling
-  - [ ] Implement GARCH models
-    - [ ] Develop GARCH(1,1) and EGARCH models
-    - [ ] Create volatility forecasting functions
-  - [ ] Develop regime-switching models
-    - [ ] Implement Markov-switching GARCH
-    - [ ] Create hidden Markov model for volatility regimes
-  - [ ] Enhance local volatility calculations
-    - [ ] Improve fitting and interpolation techniques for vol surface
+- [ ] **Expected Shortfall (ES) Implementation**:
+  - [ ] Develop tools to calculate Expected Shortfall (also known as Conditional VaR) at various confidence levels, providing a more comprehensive view of potential losses beyond VaR.
 
-- [ ] Expand One-Dimensional Stochastic Models
-  - [ ] Implement Variance Gamma model
-  - [ ] Add Normal Inverse Gaussian model
-  - [ ] Enhance existing model calibrations
+- [ ] **Stress Testing Scenarios**:
+  - [ ] **Monte Carlo-based Stress Testing**: Design stress testing frameworks that simulate extreme market conditions using Monte Carlo methods to assess the robustness of trading strategies under stress scenarios.
+  - [ ] **Liquidity Risk Assessment**:
+    - [ ] **Bid-Ask Spread Analysis**: Develop a tool to analyze the bid-ask spread for options, particularly during high volatility periods, to assess liquidity risk and its impact on trade execution and pricing.
 
-- [ ] Develop Multi-Dimensional Stochastic Modeling
-  - [ ] Implement Lévy Copulas for multi-asset correlation modeling
-  - [ ] Extend Monte Carlo for multiple assets
-    - [ ] Implement correlated asset price simulations
-    - [ ] Develop multi-asset path generation algorithms
-  - [ ] Create multi-asset option pricing models
-    - [ ] Implement basket option pricing
+### Integrate Advanced Volatility Modeling
 
-- [ ] Improve Greeks calculations
-  - [ ] Add vomma and vanna calculations
-  - [ ] Implement numerical methods for higher-order Greeks
+- [ ] **GARCH Models Implementation**:
+  - [ ] **GARCH(1,1) and EGARCH Models**: Introduce these models for volatility forecasting, allowing for the dynamic updating of volatility based on past price behavior and asymmetric volatility effects.
+  - [ ] **Volatility Forecasting Functions**: Develop functions to predict future volatility using these models, enhancing the accuracy of risk and probability calculations.
 
-  - [ ] Implement Advanced Hedging Strategies
-  - [ ] Develop Options Greeks hedging
-    - [ ] Implement delta-gamma hedging algorithms
-    - [ ] Create vega hedging strategies
-  - [ ] Implement Mean-Variance hedging
-    - [ ] Develop quadratic hedging techniques
-    - [ ] Create hedging performance metrics
-  - [ ] Create dynamic hedging strategies
-    - [ ] Implement adaptive hedging based on market conditions
+- [ ] **Regime-Switching Models**:
+  - [ ] **Markov-Switching GARCH**: Implement models that account for shifts in market regimes, helping identify periods of higher or lower volatility and adjust strategies accordingly.
+  - [ ] **Hidden Markov Model for Volatility Regimes**: Integrate hidden Markov models to detect underlying volatility regimes, improving the prediction of market behavior under different conditions.
 
-- [ ] Improve Spread Identification and Analysis
-  - [ ] Implement more spread strategies
-    - [ ] Add iron condor identification algorithm
-    - [ ] Develop butterfly spread analysis
-  - [ ] Enhance spread scoring system
-    - [ ] Develop dynamic weighting based on market conditions
+- [ ] **Enhanced Local Volatility Calculations**:
+  - [ ] **Improved Fitting and Interpolation Techniques**: Enhance the precision of local volatility surfaces by refining fitting methods and interpolation techniques, resulting in better option pricing and risk assessment.
 
-- [ ] Develop Comprehensive Portfolio Management
-  - [ ] Implement position management
-    - [ ] Develop add/close position functions with P&L tracking
-    - [ ] Create position sizing algorithms
-  - [ ] Develop historical tracking and analysis
-    - [ ] Implement time series analysis of portfolio performance
-  - [ ] Create portfolio-level tools
-    - [ ] Develop portfolio VaR and ES calculations
-    - [ ] Implement portfolio optimization algorithms
+### Expand One-Dimensional Stochastic Models
+
+- [ ] **Variance Gamma Model**:
+  - [ ] Implement the Variance Gamma model for more accurate pricing of options, particularly in markets with heavy tails or skewed distributions.
+
+- [ ] **Normal Inverse Gaussian (NIG) Model**:
+  - [ ] Integrate the NIG model to account for skewness and kurtosis in asset returns, offering a more nuanced approach to option pricing and risk management.
+
+- [ ] **Enhanced Model Calibrations**:
+  - [ ] Improve the calibration of existing models, ensuring that they accurately reflect market conditions and historical data, enhancing the reliability of simulations and pricing.
+
+### Develop Multi-Dimensional Stochastic Modeling
+
+- [ ] **Lévy Copulas for Multi-Asset Correlation Modeling**:
+  - [ ] Implement Lévy copulas to model the dependency structures between multiple assets, allowing for more sophisticated multi-asset portfolio simulations and risk assessments.
+
+- [ ] **Extended Monte Carlo for Multiple Assets**:
+  - [ ] **Correlated Asset Price Simulations**: Develop algorithms for simulating correlated price paths across multiple assets, providing insights into the joint behavior of assets in a portfolio.
+  - [ ] **Multi-Asset Path Generation Algorithms**: Create advanced path generation techniques for scenarios involving multiple assets, enhancing the simulation of complex trading strategies.
+
+- [ ] **Multi-Asset Option Pricing Models**:
+  - [ ] **Basket Option Pricing**: Implement models to price basket options, where the payoff depends on the performance of a group of assets, expanding the tool's capabilities to handle more complex options strategies.
+
+### Improve Greeks Calculations
+
+- [ ] **Vomma and Vanna Calculations**:
+  - [ ] Add support for calculating higher-order Greeks like vomma (sensitivity of vega to volatility) and vanna (sensitivity of delta to volatility), providing deeper insights into options risk management.
+
+- [ ] **Numerical Methods for Higher-Order Greeks**:
+  - [ ] Implement robust numerical techniques for accurately calculating higher-order Greeks, essential for sophisticated hedging and risk management strategies.
+
+### Implement Advanced Hedging Strategies
+
+- [ ] **Options Greeks Hedging**:
+  - [ ] **Delta-Gamma Hedging Algorithms**: Develop algorithms to hedge both delta and gamma, ensuring that portfolios are protected against small and large movements in the underlying asset.
+  - [ ] **Vega Hedging Strategies**: Create strategies to hedge against volatility risk, ensuring that portfolios are less sensitive to changes in implied volatility.
+
+- [ ] **Mean-Variance Hedging**:
+  - [ ] **Quadratic Hedging Techniques**: Implement mean-variance hedging approaches to minimize the variance of portfolio returns, improving risk-adjusted performance.
+  - [ ] **Hedging Performance Metrics**: Develop metrics to evaluate the effectiveness of hedging strategies, providing traders with actionable insights into their hedging performance.
+
+- [ ] **Dynamic Hedging Strategies**:
+  - [ ] **Adaptive Hedging Based on Market Conditions**: Implement dynamic hedging strategies that adjust based on real-time market conditions, improving the resilience and adaptability of trading strategies.
+
+### Improve Spread Identification and Analysis
+
+- [ ] **More Spread Strategies**:
+  - [ ] **Iron Condor Identification Algorithm**: Introduce algorithms to identify iron condor opportunities, expanding the range of spread strategies available to traders.
+  - [ ] **Butterfly Spread Analysis**: Develop tools to analyze butterfly spreads, providing detailed insights into their potential risks and rewards.
+
+- [ ] **Enhanced Spread Scoring System**:
+  - [ ] **Dynamic Weighting Based on Market Conditions**: Refine the spread scoring system to dynamically adjust weightings based on current market conditions, ensuring that the most relevant factors are emphasized in scoring.
+
+### Develop Comprehensive Portfolio Management
+
+- [ ] **Position Management**:
+  - [ ] **Add/Close Position Functions with P&L Tracking**: Implement functionalities for managing open positions, including tools to track profit and loss (P&L) in real-time.
+  - [ ] **Position Sizing Algorithms**: Develop algorithms for optimal position sizing, helping traders manage risk and maximize returns.
+
+- [ ] **Historical Tracking and Analysis**:
+  - [ ] **Time Series Analysis of Portfolio Performance**: Implement tools for analyzing portfolio performance over time, using time series analysis to identify trends and make data-driven adjustments.
+
+- [ ] **Portfolio-Level Tools**:
+  - [ ] **Portfolio VaR and ES Calculations**: Extend VaR and ES calculations to the portfolio level, providing a holistic view of risk across all positions.
+  - [ ] **Portfolio Optimization Algorithms**: Develop algorithms to optimize portfolios based on multiple criteria, including risk, return, and capital allocation.
