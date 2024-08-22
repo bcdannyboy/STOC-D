@@ -6,6 +6,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +47,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Average Implied Volatility: %.4f\n", avgIV)
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
-	calibrateGlobalModels(history, chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities)
+	calibrateGlobalModels(history, chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, spreadType)
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
@@ -111,7 +112,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	return spreads
 }
 
-func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64) {
+func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, spreadType string) {
 	if modelsCalibrated {
 		return // Models already calibrated
 	}
@@ -150,13 +151,16 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 
 	// Calibrate CGMY model
 	fmt.Printf("Calibrating CGMY model...\n")
-	cgmyProcess := models.NewCGMYProcess(1, 1, 1, 0.5) // Initial guess
-	cgmymarketPrices := extractOptionPrices(chain)
-	cgmys0 := underlyingPrice
-	cgmyt := 1.0   // Use 1 year as a default time to maturity
-	isCall := true // Assume we're using call options for calibration
+	cgmyProcess := models.NewCGMYProcess(0.1, 5.0, 10.0, 0.5) // Initial guess
+	cgmyt := 1.0                                              // Use 1 year as a default time to maturity
+	isCall := true                                            // Assume we're using call options for calibration
 
-	cgmyProcess.Calibrate(cgmymarketPrices, strikes, cgmys0, riskFreeRate, cgmyt, isCall)
+	if strings.Contains(strings.ToLower(spreadType), "put") {
+		fmt.Printf("Using put options for CGMY calibration\n")
+		isCall = false
+	}
+
+	cgmyProcess.Calibrate(marketPrices, strikes, underlyingPrice, riskFreeRate, cgmyt, isCall)
 	globalModels.CGMY = cgmyProcess
 
 	// Calibrate Heston model

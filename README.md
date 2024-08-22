@@ -1,8 +1,8 @@
-# STOC'D: Stochastic Optimization for Credit Spread Decision Making
+# STOC'D: Stochastic Trade Optimization for Credit Derivatives
 
 ![STOC'D Logo](./stocd.webp)
 
-STOC'D (Stochastic Optimization for Credit Spread Decision Making) is an advanced options trading analysis tool that employs various stochastic models and volatility estimation techniques to identify optimal credit spread opportunities.
+STOC'D (Stochastic Trade Optimization for Credit Derivatives) is an advanced options trading analysis tool that employs various stochastic models and volatility estimation techniques to identify optimal credit spread opportunities.
 
 ## Table of Contents
 
@@ -84,6 +84,8 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 5. **Historical Volatility**: Computes historical volatility from past price data.
 
+6. **Heston Stochastic Volatility**: Estimates volatility using the Heston model with mean-reverting stochastic volatility.
+
 ### Stochastic Models
 
 1. **Black-Scholes-Merton (BSM) Model**: Implements the classic option pricing model for European options.
@@ -139,32 +141,19 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 ### Integrate Advanced Volatility Modeling
 
-- [ ] **GARCH Models Implementation**:
-  - [ ] **GARCH(1,1) and EGARCH Models**: Introduce these models for volatility forecasting, allowing for the dynamic updating of volatility based on past price behavior and asymmetric volatility effects.
-  - [ ] **Volatility Forecasting Functions**: Develop functions to predict future volatility using these models, enhancing the accuracy of risk and probability calculations.
-
-- [ ] **Regime-Switching Models**:
-  - [ ] **Markov-Switching GARCH**: Implement models that account for shifts in market regimes, helping identify periods of higher or lower volatility and adjust strategies accordingly.
-  - [ ] **Hidden Markov Model for Volatility Regimes**: Integrate hidden Markov models to detect underlying volatility regimes, improving the prediction of market behavior under different conditions.
-
-- [ ] **Enhanced Local Volatility Calculations**:
-  - [ ] **Improved Fitting and Interpolation Techniques**: Enhance the precision of local volatility surfaces by refining fitting methods and interpolation techniques, resulting in better option pricing and risk assessment.
+- [ ] **SABR Model Implementation**: Stochastic Alpha Beta Rho (SABR) model for volatility modeling, offering a more flexible framework for capturing the dynamics of implied volatility surfaces.
+- [ ] **Bates Model Implementation**: Integrate the Bates model, which combines stochastic volatility and jumps, to capture the complex dynamics of asset prices and improve option pricing accuracy.
 
 ### Expand One-Dimensional Stochastic Models
 
-- [ ] **Variance Gamma Model**:
-  - [ ] Implement the Variance Gamma model for more accurate pricing of options, particularly in markets with heavy tails or skewed distributions.
-
-- [ ] **Normal Inverse Gaussian (NIG) Model**:
-  - [ ] Integrate the NIG model to account for skewness and kurtosis in asset returns, offering a more nuanced approach to option pricing and risk management.
-
-- [ ] **Enhanced Model Calibrations**:
-  - [ ] Improve the calibration of existing models, ensuring that they accurately reflect market conditions and historical data, enhancing the reliability of simulations and pricing.
+- [ ] **Longstaff-Schwartz Method**: Implement the Longstaff-Schwartz method for American option pricing, allowing for more accurate pricing of options with early exercise features.
+- [ ] **Variance Gamma Model**: Implement the Variance Gamma model for more accurate pricing of options, particularly in markets with heavy tails or skewed distributions.
+- [ ] **Normal Inverse Gaussian (NIG) Model**: Integrate the NIG model to account for skewness and kurtosis in asset returns, offering a more nuanced approach to option pricing and risk management.
+- [ ] **Enhanced Model Calibrations**: Improve the calibration of existing models, ensuring that they accurately reflect market conditions and historical data, enhancing the reliability of simulations and pricing.
 
 ### Develop Multi-Dimensional Stochastic Modeling
 
-- [ ] **Lévy Copulas for Multi-Asset Correlation Modeling**:
-  - [ ] Implement Lévy copulas to model the dependency structures between multiple assets, allowing for more sophisticated multi-asset portfolio simulations and risk assessments.
+- [ ] **Lévy Copulas for Multi-Asset Correlation Modeling**: Implement Lévy copulas to model the dependency structures between multiple assets, allowing for more sophisticated multi-asset portfolio simulations and risk assessments.
 
 - [ ] **Extended Monte Carlo for Multiple Assets**:
   - [ ] **Correlated Asset Price Simulations**: Develop algorithms for simulating correlated price paths across multiple assets, providing insights into the joint behavior of assets in a portfolio.
@@ -175,11 +164,9 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 ### Improve Greeks Calculations
 
-- [ ] **Vomma and Vanna Calculations**:
-  - [ ] Add support for calculating higher-order Greeks like vomma (sensitivity of vega to volatility) and vanna (sensitivity of delta to volatility), providing deeper insights into options risk management.
+- [ ] **Vomma and Vanna Calculations**: Add support for calculating higher-order Greeks like vomma (sensitivity of vega to volatility) and vanna (sensitivity of delta to volatility), providing deeper insights into options risk management.
 
-- [ ] **Numerical Methods for Higher-Order Greeks**:
-  - [ ] Implement robust numerical techniques for accurately calculating higher-order Greeks, essential for sophisticated hedging and risk management strategies.
+- [ ] **Numerical Methods for Higher-Order Greeks**: Implement robust numerical techniques for accurately calculating higher-order Greeks, essential for sophisticated hedging and risk management strategies.
 
 ### Implement Advanced Hedging Strategies
 

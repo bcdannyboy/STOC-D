@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"golang.org/x/exp/rand"
-	"gonum.org/v1/gonum/stat/distuv"
 )
 
 type CGMYParams struct {
@@ -106,6 +105,10 @@ func (p *CGMYProcess) FastOptionPrice(s0, strike, r, t float64, isCall bool) flo
 	}
 
 	return price
+}
+
+func (p *CGMYProcess) CalculateVolatility() float64 {
+	return math.Sqrt(p.Params.C * math.Gamma(2-p.Params.Y) * (1/math.Pow(p.Params.M, 2-p.Params.Y) + 1/math.Pow(p.Params.G, 2-p.Params.Y)))
 }
 
 func integrate(f func(float64) float64, a, b float64, n int) float64 {
@@ -257,36 +260,40 @@ func (p *CGMYProcess) SimulatePath(t, dt float64, rng *rand.Rand) []float64 {
 }
 
 func (p *CGMYProcess) SimulateIncrement(dt float64, rng *rand.Rand) float64 {
-	alpha := 1.0
-	c, y := p.Params.C, p.Params.Y
+	c, g, m, y := p.Params.C, p.Params.G, p.Params.M, p.Params.Y
 
-	uniformDist := distuv.Uniform{Min: 0, Max: 1, Src: rng}
-	expDist := distuv.Exponential{Rate: 1, Src: rng}
-	gammaDist := distuv.Gamma{Alpha: 1, Beta: 1, Src: rng}
-
-	var sum float64
-	j := 0
-	for {
-		j++
-		gamma := gammaDist.Rand()
-		u := uniformDist.Rand()
-		e := expDist.Rand()
-		v := rng.Float64()
-
-		jump := math.Pow(alpha*gamma/(2*c*dt), -1/y) * math.Min(1, e*math.Pow(u, 1/y))
-		if v < 0.5 {
-			jump = -jump
+	// Use the more stable series representation for small time steps
+	if dt < 0.1 {
+		var sum float64
+		for j := 1; ; j++ {
+			term := math.Pow(c*dt, float64(j)) / math.Gamma(float64(j)+1) *
+				(math.Pow(m, y-float64(j)) + math.Pow(g, y-float64(j)))
+			sum += term
+			if term < 1e-10 {
+				break
+			}
 		}
-
-		sum += jump
-
-		if math.Pow(alpha*float64(j)/(2*c*dt), -1/y) <= e*math.Pow(u, 1/y) {
-			break
-		}
+		return rng.NormFloat64()*math.Sqrt(dt*c*(1/m+1/g)) +
+			c*dt*math.Gamma(-y)*(math.Pow(m, y-1)-math.Pow(g, y-1))
 	}
 
-	b := -c * math.Gamma(1-y) * (math.Pow(p.Params.M, y-1) - math.Pow(p.Params.G, y-1))
-	return sum + b*dt
+	// Use the shot noise representation for larger time steps
+	var sum float64
+	for {
+		E := rng.ExpFloat64()
+		U := rng.Float64()
+		if math.Pow(c*dt/E, 1/y) <= U {
+			break
+		}
+		V := rng.Float64()
+		W := rng.ExpFloat64()
+		if V < 0.5 {
+			sum -= math.Pow(W/m, 1/y)
+		} else {
+			sum += math.Pow(W/g, 1/y)
+		}
+	}
+	return sum + c*dt*math.Gamma(-y)*(math.Pow(m, y-1)-math.Pow(g, y-1))
 }
 
 func (p *CGMYProcess) SimulatePathsBatch(t, dt float64, numPaths int) [][]float64 {
