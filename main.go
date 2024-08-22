@@ -25,9 +25,9 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"SPY"}
+	symbols := []string{"HIMS"}
 	indicators := map[string]int{
-		"SPY": 1,
+		"HIMS": 1,
 	}
 
 	minDTE := 5
