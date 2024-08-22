@@ -24,7 +24,7 @@ const (
 	weightES          = 0.1
 )
 
-func main() {
+func STOCD() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -169,4 +169,14 @@ func main() {
 	}
 
 	fmt.Printf("Successfully wrote %d spreads to %s\n", len(allSpreads), f)
+}
+
+func main() {
+	// take a list of stocks
+	// calculate their total volume / liquidity scores
+	// rank based on total volume, liquidity, and max pain score
+	// take top 3
+	// calculate put / call ratio + liquidity bias (up / down) for each
+	// translate put / call ratio + liquidity bias into a score (-1 to 1) where -1 is bearish and 1 is bullish
+	// pass the stocks and scores to STOCD and find spreads for each stock
 }
