@@ -74,7 +74,6 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels, bool) (map[string]float64, []float64)
 	}{
 		{name: "CGMY_Heston", fn: simulateCGMY},
-		{name: "Merton_Heston", fn: simulateMertonJumpDiffusion},
 		{name: "Kou_Heston", fn: simulateKouJumpDiffusion},
 	}
 

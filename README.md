@@ -83,7 +83,7 @@ As you can see, the complexity grows exponentially with the number of expiration
 
 STOC'D Implements robust parallel algorithms to optimize performance and speed up computations, leveraging the power of modern multi-core processors to handle complex calculations efficiently. While this helps reduce the time required for simulations, it requires significant computational resources to run efficiently.
 
-With a 32 Core vCPU, STOC'D can process ~250M simulations in ~10 minutes.
+With a 32 Core vCPU, all 25 volatility measures, only Kuo_Heston and CGMY_Heston simulation models enabled, and 1000 simulations per model, 100,000 spreads (i.e. SPY 5-45 DTE) takes approximately 4 hours to complete.
 
 ### Data Fetching
 
@@ -145,6 +145,7 @@ With a 32 Core vCPU, STOC'D can process ~250M simulations in ~10 minutes.
 
 - Implements a composite scoring system considering probability of profit, VaR, ES, Bid-Ask Spread, and trading volume
 - Normalizes individual factors to create a balanced score
+- Weights factors in priority order: liquidity (0.5), probability (0.3), VaR (0.1), ES (0.1)
 - Ranks spread opportunities based on the composite score
 
 ## Future Enhancements

@@ -17,6 +17,13 @@ import (
 	"github.com/xhhuango/json"
 )
 
+const (
+	weightLiquidity   = 0.5
+	weightProbability = 0.3
+	weightVaR         = 0.1
+	weightES          = 0.1
+)
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -25,14 +32,14 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"MARA"}
+	symbols := []string{"SPY"}
 	indicators := map[string]int{
-		"MARA": 1,
+		"SPY": 1,
 	}
 
 	minDTE := 5
-	maxDTE := 21
-	rfr := 0.0389
+	maxDTE := 45
+	rfr := 0.0379
 	minRoR := 0.175
 
 	today := time.Now().Format("2006-01-02")
@@ -95,23 +102,6 @@ func main() {
 	var minProb, maxProb, minVaR, maxVaR, minES, maxES, minLiquidity, maxLiquidity float64
 	maxLiquidity = math.Inf(-1) // Initialize to negative infinity
 	minLiquidity = math.Inf(1)  // Initialize to positive infinity
-	for _, spread := range allSpreads {
-		prob := spread.Probability.AverageProbability
-		var95 := math.Abs(spread.VaR95)
-		es := math.Abs(spread.ExpectedShortfall)
-		liquidity := spread.Liquidity
-
-		minProb = math.Min(minProb, prob)
-		maxProb = math.Max(maxProb, prob)
-		minVaR = math.Min(minVaR, var95)
-		maxVaR = math.Max(maxVaR, var95)
-		minES = math.Min(minES, es)
-		maxES = math.Max(maxES, es)
-		minLiquidity = math.Min(minLiquidity, liquidity)
-		maxLiquidity = math.Max(maxLiquidity, liquidity)
-	}
-
-	// Calculate the composite score for each spread
 	for i := range allSpreads {
 		prob := allSpreads[i].Probability.AverageProbability
 		var95 := math.Abs(allSpreads[i].VaR95)
@@ -131,7 +121,13 @@ func main() {
 		// Normalize liquidity (lower is better, as lower spread means higher liquidity)
 		normLiquidity := 1 - ((liquidity - minLiquidity) / (maxLiquidity - minLiquidity))
 
-		allSpreads[i].CompositeScore = (normProb + normVaR + normES + normLiquidity) * vol / 4
+		// Calculate weighted score
+		weightedScore := (normLiquidity * weightLiquidity) +
+			(normProb * weightProbability) +
+			(normVaR * weightVaR) +
+			(normES * weightES)
+
+		allSpreads[i].CompositeScore = weightedScore * vol
 	}
 
 	sort.Slice(allSpreads, func(i, j int) bool {
