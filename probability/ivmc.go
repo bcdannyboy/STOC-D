@@ -11,16 +11,23 @@ import (
 )
 
 const (
-	numSimulations = 1000
-	timeSteps      = 252 // Assuming 252 trading days in a year
-	numWorkers     = 100
+	minSimulations            = 500
+	maxSimulations            = 1000
+	timeSteps                 = 252 // Assuming 252 trading days in a year
+	numWorkers                = 100
+	earlyTerminationThreshold = 0.25
 )
 
-var rngPool = sync.Pool{
-	New: func() interface{} {
-		return rand.New(rand.NewSource(uint64(rand.Int63())))
-	},
-}
+var (
+	rngPool = sync.Pool{
+		New: func() interface{} {
+			return rand.New(rand.NewSource(uint64(rand.Int63())))
+		},
+	}
+
+	volatilityCache  sync.Map
+	probabilityCache sync.Map
+)
 
 type GlobalModels struct {
 	Heston *models.HestonModel
@@ -74,6 +81,7 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels, bool) (map[string]float64, []float64)
 	}{
 		{name: "CGMY_Heston", fn: simulateCGMY},
+		{name: "Merton_Heston", fn: simulateMertonJumpDiffusion},
 		{name: "Kou_Heston", fn: simulateKouJumpDiffusion},
 	}
 
@@ -84,6 +92,8 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	semaphore := make(chan struct{}, numWorkers)
 	var finalPrices []float64
 
+	spreadID := spread.ShortLeg.Option.Symbol + "_" + spread.LongLeg.Option.Symbol
+
 	for _, vol := range volatilities {
 		for _, simFunc := range simulationFuncs {
 			wg.Add(1)
@@ -92,15 +102,24 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 
+				cacheKey := cacheKey{spreadID: spreadID, volType: volName, modelName: simName}
+				if cachedProb, ok := getCachedProbability(cacheKey); ok {
+					mu.Lock()
+					results[volName+"_"+simName+"_probability"] = cachedProb
+					mu.Unlock()
+					return
+				}
+
 				rng := rngPool.Get().(*rand.Rand)
 				defer rngPool.Put(rng)
 
 				useHeston := strings.HasSuffix(simName, "Heston")
-				probMap, prices := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, history, globalModels, useHeston)
+				probMap, prices := dynamicMonteCarloSimulation(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, history, globalModels, useHeston, simFunc)
 
 				mu.Lock()
 				for key, value := range probMap {
 					results[volName+"_"+simName+"_"+key] = value
+					setCachedProbability(cacheKey, value)
 				}
 				finalPrices = append(finalPrices, prices...)
 				mu.Unlock()
@@ -110,7 +129,6 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 
 	wg.Wait()
 
-	// Calculate VaR and Expected Shortfall
 	var95 := calculateVaR(spread, finalPrices, 0.95)
 	var99 := calculateVaR(spread, finalPrices, 0.99)
 	es := calculateExpectedShortfall(spread, finalPrices, 0.95)
@@ -180,6 +198,32 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 	return result
 }
 
+func dynamicMonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels, useHeston bool, simFunc func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels, bool) (map[string]float64, []float64)) (map[string]float64, []float64) {
+	initialSimulations := minSimulations
+	probMap, prices := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, history, globalModels, useHeston)
+
+	probability := probMap["probability"]
+
+	if probability <= earlyTerminationThreshold {
+		return probMap, prices
+	}
+
+	for len(prices) < maxSimulations {
+		additionalSimulations := int(math.Min(float64(maxSimulations-len(prices)), float64(initialSimulations)))
+		additionalProbMap, additionalPrices := simFunc(spread, underlyingPrice, riskFreeRate, volatility, daysToExpiration, rng, history, globalModels, useHeston)
+
+		prices = append(prices, additionalPrices...)
+		probability = (probability*float64(len(prices)-additionalSimulations) + additionalProbMap["probability"]*float64(additionalSimulations)) / float64(len(prices))
+
+		if math.Abs(probability-0.5) > 0.1 {
+			break
+		}
+	}
+
+	probMap["probability"] = probability
+	return probMap, prices
+}
+
 func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels, useHeston bool) (map[string]float64, []float64) {
 	tau := float64(daysToExpiration) / 365.0
 
@@ -187,9 +231,9 @@ func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, ri
 	merton.Sigma = volatility      // Use the provided volatility
 
 	profitCount := 0
-	finalPrices := make([]float64, numSimulations)
+	finalPrices := make([]float64, maxSimulations)
 
-	for i := 0; i < numSimulations; i++ {
+	for i := 0; i < maxSimulations; i++ {
 		var finalPrice float64
 		if useHeston {
 			volPath := simulateHestonVolPath(globalModels.Heston, volatility, tau, timeSteps, rng)
@@ -205,7 +249,7 @@ func simulateMertonJumpDiffusion(spread models.OptionSpread, underlyingPrice, ri
 	}
 
 	return map[string]float64{
-		"probability": float64(profitCount) / float64(numSimulations),
+		"probability": float64(profitCount) / float64(maxSimulations),
 	}, finalPrices
 }
 
@@ -217,9 +261,9 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 	kou.R = riskFreeRate     // Set the risk-free rate
 
 	profitCount := 0
-	finalPrices := make([]float64, numSimulations)
+	finalPrices := make([]float64, maxSimulations)
 
-	for i := 0; i < numSimulations; i++ {
+	for i := 0; i < maxSimulations; i++ {
 		var finalPrice float64
 		if useHeston {
 			volPath := simulateHestonVolPath(globalModels.Heston, volatility, tau, timeSteps, rng)
@@ -235,7 +279,7 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 	}
 
 	return map[string]float64{
-		"probability": float64(profitCount) / float64(numSimulations),
+		"probability": float64(profitCount) / float64(maxSimulations),
 	}, finalPrices
 }
 
@@ -250,9 +294,9 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 	cgmy.Params.C *= math.Pow(volAdjustment, 2)
 
 	profitCount := 0
-	finalPrices := make([]float64, numSimulations)
+	finalPrices := make([]float64, maxSimulations)
 
-	for i := 0; i < numSimulations; i++ {
+	for i := 0; i < maxSimulations; i++ {
 		path := cgmy.SimulatePath(tau, tau/float64(timeSteps), rng)
 		var finalPrice float64
 		if useHeston {
@@ -269,7 +313,7 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 	}
 
 	return map[string]float64{
-		"probability": float64(profitCount) / float64(numSimulations),
+		"probability": float64(profitCount) / float64(maxSimulations),
 	}, finalPrices
 }
 

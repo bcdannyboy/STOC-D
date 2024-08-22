@@ -235,3 +235,25 @@ func calculateLiquidity(option tradier.Option) float64 {
 	}
 	return (option.Ask - option.Bid) / ((option.Ask + option.Bid) / 2)
 }
+
+func getCachedVolatility(key cacheKey) (float64, bool) {
+	if val, ok := volatilityCache.Load(key); ok {
+		return val.(float64), true
+	}
+	return 0, false
+}
+
+func setCachedVolatility(key cacheKey, value float64) {
+	volatilityCache.Store(key, value)
+}
+
+func getCachedProbability(key cacheKey) (float64, bool) {
+	if val, ok := probabilityCache.Load(key); ok {
+		return val.(float64), true
+	}
+	return 0, false
+}
+
+func setCachedProbability(key cacheKey, value float64) {
+	probabilityCache.Store(key, value)
+}

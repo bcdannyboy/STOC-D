@@ -33,7 +33,7 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 - **Stochastic Models**: Implements Black-Scholes-Merton, Heston, Merton, Kou, and CGMY models for option pricing and simulation.
 - **Option Pricing**: Calculates option prices, Greeks, and implied volatility using the Black-Scholes-Merton model.
 - **Spread Identification**: Identifies potential Bull Put and Bear Call spread opportunities based on user-defined criteria.
-- **Probability Calculation**: Estimates probability of profit using Monte Carlo simulations with various stochastic models.
+- **Probability Calculation**: Estimates probability of profit using Dynamic Monte Carlo simulations with various stochastic models.
 - **Risk Assessment**: Calculates Value at Risk (VaR), Expected Shortfall (ES), and potential profit/loss for simulated price paths.
 - **Scoring and Ranking**: Ranks spread opportunities based on a composite score considering multiple factors.
 
