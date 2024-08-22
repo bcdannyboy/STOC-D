@@ -11,6 +11,7 @@ STOC'D (Stochastic Trade Optimization for Credit Derivatives) is an advanced opt
 3. [Installation](#installation)
 4. [Usage](#usage)
 5. [Technical Details](#technical-details)
+   - [Computational Complexity](#computational-complexity)
    - [Data Fetching](#data-fetching)
    - [Volatility Estimation](#volatility-estimation)
    - [Stochastic Models](#stochastic-models)
@@ -27,13 +28,14 @@ STOC'D is designed to assist traders in making informed decisions about credit s
 
 ## Features
 
-- Fetch and analyze historical price data and options chains
-- Implement multiple volatility estimation techniques
-- Utilize advanced stochastic models for price simulation
-- Identify optimal credit spread opportunities
-- Perform Monte Carlo simulations for probability estimation
-- Calculate Value at Risk (VaR) for risk assessment
-- Score and rank spread opportunities based on multiple factors
+- **Options Data Analysis**: Fetches historical price data, options chains, and price statistics from the Tradier API.
+- **Volatility Estimation**: Calculates volatility using various models, including Yang-Zhang, Rogers-Satchell, and Heston.
+- **Stochastic Models**: Implements Black-Scholes-Merton, Heston, Merton, Kou, and CGMY models for option pricing and simulation.
+- **Option Pricing**: Calculates option prices, Greeks, and implied volatility using the Black-Scholes-Merton model.
+- **Spread Identification**: Identifies potential Bull Put and Bear Call spread opportunities based on user-defined criteria.
+- **Probability Calculation**: Estimates probability of profit using Monte Carlo simulations with various stochastic models.
+- **Risk Assessment**: Calculates Value at Risk (VaR), Expected Shortfall (ES), and potential profit/loss for simulated price paths.
+- **Scoring and Ranking**: Ranks spread opportunities based on a composite score considering multiple factors.
 
 ## Installation
 
@@ -66,6 +68,22 @@ go run main.go
 This will fetch options data, analyze potential credit spreads, and output the results.
 
 ## Technical Details
+
+### Computational Complexity
+
+STOC'D employs various stochastic models and Monte Carlo simulations to estimate option prices, probabilities, and risks. The computational complexity of these models depends on the number of simulations, the number of time steps, and the complexity of the underlying stochastic processes.
+
+A rough estimate of the computational complexity can be described as:
+
+`O(numExpirations * (avgStrikesPerExpiration)^2 * numModels * numVolatilityEstimates * numSimulations * timeSteps)`
+
+currently, `numSimulations` is hardcoded at 1000 and `timeSteps` is hardcoded at 252 (number of trading days in a year).
+
+As you can see, the complexity grows exponentially with the number of expirations and strikes, as well as the number of models and volatility estimates used. This can lead to significant computational overhead, especially when running multiple simulations or analyzing a large number of options.
+
+STOC'D Implements robust parallel algorithms to optimize performance and speed up computations, leveraging the power of modern multi-core processors to handle complex calculations efficiently. While this helps reduce the time required for simulations, it requires significant computational resources to run efficiently.
+
+With a 32 Core vCPU, STOC'D can process ~250M simulations in ~10 minutes.
 
 ### Data Fetching
 
@@ -114,30 +132,22 @@ This will fetch options data, analyze potential credit spreads, and output the r
 
 - Performs Monte Carlo simulations using various stochastic models
 - Estimates probability of profit for identified spreads
-- Incorporates multiple volatility estimates in simulations
+- Incorporates multiple volatility estimates and stochastic volatility movement in simulations
 
 ### Risk Assessment
 
 - Calculates Value at Risk (VaR) at 95% and 99% confidence levels
 - Computes potential profit/loss for simulated price paths
+- Calculates Expected Shortfall (ES)
+- Calculates Bid-Ask Spread and trading volume for risk assessment
 
 ### Scoring and Ranking
 
-- Implements a composite scoring system considering probability of profit, VaR, and trading volume
+- Implements a composite scoring system considering probability of profit, VaR, ES, Bid-Ask Spread, and trading volume
 - Normalizes individual factors to create a balanced score
 - Ranks spread opportunities based on the composite score
 
 ## Future Enhancements
-
-### Expand Risk Management Tools
-
-- [ ] **Expected Shortfall (ES) Implementation**:
-  - [ ] Develop tools to calculate Expected Shortfall (also known as Conditional VaR) at various confidence levels, providing a more comprehensive view of potential losses beyond VaR.
-
-- [ ] **Stress Testing Scenarios**:
-  - [ ] **Monte Carlo-based Stress Testing**: Design stress testing frameworks that simulate extreme market conditions using Monte Carlo methods to assess the robustness of trading strategies under stress scenarios.
-  - [ ] **Liquidity Risk Assessment**:
-    - [ ] **Bid-Ask Spread Analysis**: Develop a tool to analyze the bid-ask spread for options, particularly during high volatility periods, to assess liquidity risk and its impact on trade execution and pricing.
 
 ### Integrate Advanced Volatility Modeling
 

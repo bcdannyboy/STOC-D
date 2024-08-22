@@ -2,6 +2,7 @@ package probability
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/bcdannyboy/stocd/models"
@@ -185,4 +186,52 @@ func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
 	}
 
 	return strikes
+}
+
+func calculateVaR(spread models.OptionSpread, simulations []float64, confidenceLevel float64) float64 {
+	losses := make([]float64, len(simulations))
+	for i, finalPrice := range simulations {
+		pnl := calculatePnL(spread, finalPrice)
+		losses[i] = -pnl // Convert profit to loss
+	}
+	sort.Float64s(losses)
+	index := int(float64(len(losses)) * confidenceLevel)
+	return losses[index]
+}
+
+func calculateExpectedShortfall(spread models.OptionSpread, simulations []float64, confidenceLevel float64) float64 {
+	losses := make([]float64, len(simulations))
+	for i, finalPrice := range simulations {
+		pnl := calculatePnL(spread, finalPrice)
+		losses[i] = -pnl // Convert profit to loss
+	}
+	sort.Float64s(losses)
+	index := int(float64(len(losses)) * confidenceLevel)
+
+	sum := 0.0
+	for i := index; i < len(losses); i++ {
+		sum += losses[i]
+	}
+	return sum / float64(len(losses)-index)
+}
+
+func calculatePnL(spread models.OptionSpread, finalPrice float64) float64 {
+	var pnl float64
+	if spread.SpreadType == "Bull Put" {
+		pnl = math.Max(0, spread.ShortLeg.Option.Strike-finalPrice) -
+			math.Max(0, spread.LongLeg.Option.Strike-finalPrice) +
+			spread.SpreadCredit
+	} else { // Bear Call
+		pnl = math.Max(0, finalPrice-spread.ShortLeg.Option.Strike) -
+			math.Max(0, finalPrice-spread.LongLeg.Option.Strike) +
+			spread.SpreadCredit
+	}
+	return pnl
+}
+
+func calculateLiquidity(option tradier.Option) float64 {
+	if option.Ask == option.Bid {
+		return 1.0 // Avoid division by zero
+	}
+	return (option.Ask - option.Bid) / ((option.Ask + option.Bid) / 2)
 }

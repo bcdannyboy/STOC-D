@@ -32,6 +32,10 @@ type GlobalModels struct {
 func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeRate float64, daysToExpiration int, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, localVolSurface models.VolatilitySurface, history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, globalModels GlobalModels, avgVol float64) models.SpreadWithProbabilities {
 	shortLegVol, longLegVol := confirmVolatilities(spread, localVolSurface, daysToExpiration, yangzhangVolatilities, rogerssatchelVolatilities)
 
+	shortLegLiquidity := calculateLiquidity(spread.ShortLeg.Option)
+	longLegLiquidity := calculateLiquidity(spread.LongLeg.Option)
+	spreadLiquidity := (shortLegLiquidity + longLegLiquidity) / 2
+
 	volatilities := []VolType{
 		{Name: "ShortLegVol", Vol: shortLegVol},
 		{Name: "LongLegVol", Vol: longLegVol},
@@ -69,11 +73,8 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 		name string
 		fn   func(models.OptionSpread, float64, float64, float64, int, *rand.Rand, tradier.QuoteHistory, GlobalModels, bool) (map[string]float64, []float64)
 	}{
-		// {name: "CGMY_Static", fn: simulateCGMY},
 		{name: "CGMY_Heston", fn: simulateCGMY},
-		// {name: "Merton_Static", fn: simulateMertonJumpDiffusion},
 		{name: "Merton_Heston", fn: simulateMertonJumpDiffusion},
-		// {name: "Kou_Static", fn: simulateKouJumpDiffusion},
 		{name: "Kou_Heston", fn: simulateKouJumpDiffusion},
 	}
 
@@ -110,15 +111,19 @@ func MonteCarloSimulation(spread models.OptionSpread, underlyingPrice, riskFreeR
 
 	wg.Wait()
 
-	var95 := CalculateVaR(spread, finalPrices, 0.95)
-	var99 := CalculateVaR(spread, finalPrices, 0.99)
+	// Calculate VaR and Expected Shortfall
+	var95 := calculateVaR(spread, finalPrices, 0.95)
+	var99 := calculateVaR(spread, finalPrices, 0.99)
+	es := calculateExpectedShortfall(spread, finalPrices, 0.95)
 
 	averageProbability := calculateAverageProbability(results)
 
 	result := models.SpreadWithProbabilities{
-		Spread: spread,
-		VaR95:  var95,
-		VaR99:  var99,
+		Spread:            spread,
+		VaR95:             var95,
+		VaR99:             var99,
+		ExpectedShortfall: es,
+		Liquidity:         spreadLiquidity,
 		Probability: models.ProbabilityResult{
 			AverageProbability: averageProbability,
 			Probabilities:      results,

@@ -51,30 +51,32 @@ type VolatilityInfo struct {
 }
 
 type SpreadWithProbabilities struct {
-	Spread         OptionSpread
-	VaR95          float64
-	VaR99          float64
-	CompositeScore float64
-	Probability    ProbabilityResult
-	MeetsRoR       bool
-	CGMYParams     CGMYParams
-	MertonParams   struct {
-		Lambda float64 // Intensity of jumps
-		Mu     float64 // Drift of jumps
-		Delta  float64 // Volatility of jumps
+	Spread            OptionSpread
+	VaR95             float64
+	VaR99             float64
+	ExpectedShortfall float64
+	Liquidity         float64
+	CompositeScore    float64
+	Probability       ProbabilityResult
+	MeetsRoR          bool
+	CGMYParams        CGMYParams
+	MertonParams      struct {
+		Lambda float64
+		Mu     float64
+		Delta  float64
 	}
 	KouParams struct {
-		Lambda float64 // Intensity of jumps
-		P      float64 // Probability of up jump
-		Eta1   float64 // Magnitude of up jump
-		Eta2   float64 // Magnitude of down jump
+		Lambda float64
+		P      float64
+		Eta1   float64
+		Eta2   float64
 	}
 	HestonParams struct {
-		V0    float64 // Initial variance
-		Kappa float64 // Mean reversion speed of variance
-		Theta float64 // Long-term variance
-		Xi    float64 // Volatility of variance
-		Rho   float64 // Correlation between asset returns and variance
+		V0    float64
+		Kappa float64
+		Theta float64
+		Xi    float64
+		Rho   float64
 	}
 	VolatilityInfo VolatilityInfo
 }

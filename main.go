@@ -25,9 +25,9 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"PLTR"}
+	symbols := []string{"MARA"}
 	indicators := map[string]int{
-		"PLTR": 1,
+		"MARA": 1,
 	}
 
 	minDTE := 5
@@ -91,22 +91,32 @@ func main() {
 		return
 	}
 
-	// First, find the min and max values across all spreads
-	var minProb, maxProb, minVaR, maxVaR float64
+	// Find the min and max values across all spreads
+	var minProb, maxProb, minVaR, maxVaR, minES, maxES, minLiquidity, maxLiquidity float64
+	maxLiquidity = math.Inf(-1) // Initialize to negative infinity
+	minLiquidity = math.Inf(1)  // Initialize to positive infinity
 	for _, spread := range allSpreads {
 		prob := spread.Probability.AverageProbability
-		var95 := math.Abs(spread.VaR95) // Use absolute value of VaR
+		var95 := math.Abs(spread.VaR95)
+		es := math.Abs(spread.ExpectedShortfall)
+		liquidity := spread.Liquidity
 
 		minProb = math.Min(minProb, prob)
 		maxProb = math.Max(maxProb, prob)
 		minVaR = math.Min(minVaR, var95)
 		maxVaR = math.Max(maxVaR, var95)
+		minES = math.Min(minES, es)
+		maxES = math.Max(maxES, es)
+		minLiquidity = math.Min(minLiquidity, liquidity)
+		maxLiquidity = math.Max(maxLiquidity, liquidity)
 	}
 
-	// Then, calculate the composite score for each spread
+	// Calculate the composite score for each spread
 	for i := range allSpreads {
 		prob := allSpreads[i].Probability.AverageProbability
 		var95 := math.Abs(allSpreads[i].VaR95)
+		es := math.Abs(allSpreads[i].ExpectedShortfall)
+		liquidity := allSpreads[i].Liquidity
 		vol := float64(allSpreads[i].Spread.ShortLeg.Option.Volume + allSpreads[i].Spread.LongLeg.Option.Volume)
 
 		// Normalize probability (higher is better)
@@ -115,8 +125,13 @@ func main() {
 		// Normalize VaR (lower is better)
 		normVaR := 1 - ((var95 - minVaR) / (maxVaR - minVaR))
 
-		// Calculate composite score
-		allSpreads[i].CompositeScore = (normProb + normVaR) * vol
+		// Normalize ES (lower is better)
+		normES := 1 - ((es - minES) / (maxES - minES))
+
+		// Normalize liquidity (lower is better, as lower spread means higher liquidity)
+		normLiquidity := 1 - ((liquidity - minLiquidity) / (maxLiquidity - minLiquidity))
+
+		allSpreads[i].CompositeScore = (normProb + normVaR + normES + normLiquidity) * vol / 4
 	}
 
 	sort.Slice(allSpreads, func(i, j int) bool {
