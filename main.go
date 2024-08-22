@@ -24,7 +24,7 @@ const (
 	weightES          = 0.1
 )
 
-func main() {
+func STOCD(indicators map[string]float64, minDTE, maxDTE, rfr, minRoR float64) string {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -32,15 +32,10 @@ func main() {
 
 	tradier_key := os.Getenv("TRADIER_KEY")
 
-	symbols := []string{"PLTR"}
-	indicators := map[string]int{
-		"PLTR": -1,
+	symbols := make([]string, len(indicators))
+	for symbol, _ := range indicators {
+		symbols = append(symbols, symbol)
 	}
-
-	minDTE := 5
-	maxDTE := 21
-	rfr := 0.0379
-	minRoR := 0.175
 
 	today := time.Now().Format("2006-01-02")
 	tenyrsago := time.Now().AddDate(-10, 0, 0).Format("2006-01-02")
@@ -95,7 +90,7 @@ func main() {
 	fmt.Printf("Number of identified spreads: %d\n", len(allSpreads))
 	if len(allSpreads) == 0 {
 		fmt.Println("No spreads identified. Check minRoR and other parameters.")
-		return
+		return "No spreads identified. Check minRoR and other parameters."
 	}
 
 	// Find the min and max values across all spreads
@@ -158,15 +153,72 @@ func main() {
 	jspreads, err := json.Marshal(allSpreads)
 	if err != nil {
 		fmt.Printf("Error marshalling spreads: %s\n", err.Error())
-		return
+		return "Error marshalling spreads"
 	}
 
 	f := "jspreads.json"
 	err = ioutil.WriteFile(f, jspreads, 0644)
 	if err != nil {
 		fmt.Printf("Error writing to file %s: %s\n", f, err.Error())
-		return
+		return "Error writing to file"
 	}
 
 	fmt.Printf("Successfully wrote %d spreads to %s\n", len(allSpreads), f)
+	fmt.Printf("--------------------\n")
+
+	spreadStrings := make([]string, len(allSpreads))
+	for i, spread := range allSpreads {
+		LongLeg := spread.Spread.LongLeg.Option.Description
+		ShortLeg := spread.Spread.ShortLeg.Option.Description
+		RoR := spread.Spread.ROR * 100 // Convert to percentage
+		CompositeScore := spread.CompositeScore
+		ExpectedShortfall := spread.ExpectedShortfall * 100               // Convert to percentage
+		averageProbability := spread.Probability.AverageProbability * 100 // Convert to percentage
+		BSMPrice := spread.Spread.SpreadBSMPrice
+		MarketPrice := spread.Spread.SpreadCredit
+		AveragePrice := (BSMPrice + MarketPrice) / 2
+		Vol := spread.Spread.ShortLeg.Option.Volume + spread.Spread.LongLeg.Option.Volume
+		Liquidity := spread.Liquidity
+		Var95 := spread.VaR95 * 100 // Convert to percentage
+
+		spreadStr := fmt.Sprintf("Spread #%d (%.2f)\n", i+1, CompositeScore)
+		spreadStr += fmt.Sprintf("Average Probability: %.2f%%\n", averageProbability)
+		spreadStr += fmt.Sprintf("Bid-Ask Spread: %.2f\n", Liquidity)
+		spreadStr += fmt.Sprintf("Volume: %d\n", Vol)
+		spreadStr += fmt.Sprintf("Expected Shortfall (ES): %.2f%%\n", ExpectedShortfall)
+		spreadStr += fmt.Sprintf("Value at Risk (VaR 95): %.2f%%\n", Var95)
+		spreadStr += fmt.Sprintf("Long Leg: %s\n", LongLeg)
+		spreadStr += fmt.Sprintf("Short Leg: %s\n", ShortLeg)
+		spreadStr += fmt.Sprintf("Return on Risk (RoR): %.2f%%\n", RoR)
+		spreadStr += fmt.Sprintf("Average Price: %.2f\n", AveragePrice)
+		spreadStr += fmt.Sprintf("BSM Price: %.2f\n", BSMPrice)
+		spreadStr += fmt.Sprintf("Market Price: %.2f\n", MarketPrice)
+
+		spreadStrings[i] = spreadStr
+	}
+
+	finalStr := fmt.Sprintf("Top %d spreads\n", len(allSpreads))
+	finalStr += "--------------------\n"
+
+	for i, spreadStr := range spreadStrings {
+		finalStr += spreadStr + "\n"
+		if i < len(spreadStrings)-1 {
+			finalStr += "--------------------\n"
+		}
+	}
+
+	fancyspreads := "fancyspreads.txt"
+	err = ioutil.WriteFile(fancyspreads, []byte(finalStr), 0644)
+	if err != nil {
+		fmt.Printf("Error writing to file %s: %s\n", fancyspreads, err.Error())
+		return "Error writing to file"
+	}
+
+	fmt.Printf("Successfully wrote top %d spreads to %s\n", len(allSpreads), fancyspreads)
+
+	return finalStr
+}
+
+func main() {
+
 }

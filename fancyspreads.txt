@@ -1,0 +1,141 @@
+Top 10 spreads
+Spread #1 (8.65)
+Average Probability: 0.64
+Liquidity: 0.03
+Volume: 3209
+Expected Shortfall: -0.24
+VaR 95: -0.24
+Long Leg: PLTR Aug 30 2024 $30.00 Put
+Short Leg: PLTR Aug 30 2024 $31.00 Put
+Return on Risk: 0.32
+Average Price: 0.25
+BSM Price: 0.25
+Market Price: 0.24
+
+--------------------
+Spread #2 (8.55)
+Average Probability: 0.57
+Liquidity: 0.03
+Volume: 3705
+Expected Shortfall: -0.16
+VaR 95: -0.16
+Long Leg: PLTR Aug 30 2024 $31.00 Put
+Short Leg: PLTR Aug 30 2024 $31.50 Put
+Return on Risk: 0.47
+Average Price: 0.17
+BSM Price: 0.18
+Market Price: 0.16
+
+--------------------
+Spread #3 (8.40)
+Average Probability: 0.49
+Liquidity: 0.03
+Volume: 4529
+Expected Shortfall: -0.39
+VaR 95: -0.39
+Long Leg: PLTR Aug 30 2024 $31.00 Put
+Short Leg: PLTR Aug 30 2024 $32.00 Put
+Return on Risk: 0.64
+Average Price: 0.40
+BSM Price: 0.41
+Market Price: 0.39
+
+--------------------
+Spread #4 (8.38)
+Average Probability: 0.64
+Liquidity: 0.05
+Volume: 2686
+Expected Shortfall: -0.36
+VaR 95: -0.36
+Long Leg: PLTR Aug 30 2024 $29.00 Put
+Short Leg: PLTR Aug 30 2024 $31.00 Put
+Return on Risk: 0.22
+Average Price: 0.36
+BSM Price: 0.37
+Market Price: 0.36
+
+--------------------
+Spread #5 (8.33)
+Average Probability: 0.49
+Liquidity: 0.04
+Volume: 4426
+Expected Shortfall: -0.20
+VaR 95: -0.20
+Long Leg: PLTR Aug 30 2024 $31.50 Put
+Short Leg: PLTR Aug 30 2024 $32.00 Put
+Return on Risk: 0.67
+Average Price: 0.22
+BSM Price: 0.23
+Market Price: 0.20
+
+--------------------
+Spread #6 (8.32)
+Average Probability: 0.64
+Liquidity: 0.07
+Volume: 2649
+Expected Shortfall: -0.13
+VaR 95: -0.13
+Long Leg: PLTR Aug 30 2024 $30.50 Put
+Short Leg: PLTR Aug 30 2024 $31.00 Put
+Return on Risk: 0.35
+Average Price: 0.14
+BSM Price: 0.15
+Market Price: 0.13
+
+--------------------
+Spread #7 (8.29)
+Average Probability: 0.57
+Liquidity: 0.04
+Volume: 3106
+Expected Shortfall: -0.41
+VaR 95: -0.41
+Long Leg: PLTR Aug 30 2024 $30.00 Put
+Short Leg: PLTR Aug 30 2024 $31.50 Put
+Return on Risk: 0.38
+Average Price: 0.42
+BSM Price: 0.43
+Market Price: 0.41
+
+--------------------
+Spread #8 (8.24)
+Average Probability: 0.42
+Liquidity: 0.04
+Volume: 5330
+Expected Shortfall: -0.24
+VaR 95: -0.24
+Long Leg: PLTR Aug 30 2024 $32.00 Put
+Short Leg: PLTR Aug 30 2024 $32.50 Put
+Return on Risk: 0.92
+Average Price: 0.26
+BSM Price: 0.28
+Market Price: 0.24
+
+--------------------
+Spread #9 (8.18)
+Average Probability: 0.49
+Liquidity: 0.04
+Volume: 3930
+Expected Shortfall: -0.64
+VaR 95: -0.64
+Long Leg: PLTR Aug 30 2024 $30.00 Put
+Short Leg: PLTR Aug 30 2024 $32.00 Put
+Return on Risk: 0.47
+Average Price: 0.65
+BSM Price: 0.66
+Market Price: 0.64
+
+--------------------
+Spread #10 (8.13)
+Average Probability: 0.63
+Liquidity: 0.07
+Volume: 2247
+Expected Shortfall: -0.31
+VaR 95: -0.31
+Long Leg: PLTR Aug 30 2024 $29.50 Put
+Short Leg: PLTR Aug 30 2024 $31.00 Put
+Return on Risk: 0.26
+Average Price: 0.32
+BSM Price: 0.33
+Market Price: 0.31
+
+--------------------
