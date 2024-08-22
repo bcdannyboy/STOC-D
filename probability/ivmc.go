@@ -285,13 +285,7 @@ func simulateKouJumpDiffusion(spread models.OptionSpread, underlyingPrice, riskF
 
 func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, volatility float64, daysToExpiration int, rng *rand.Rand, history tradier.QuoteHistory, globalModels GlobalModels, useHeston bool) (map[string]float64, []float64) {
 	tau := float64(daysToExpiration) / 365.0
-
-	cgmy := *globalModels.CGMY // Create a copy of the global model
-
-	// Adjust CGMY parameters based on the provided volatility
-	currentVol := math.Sqrt(cgmy.Params.C * math.Gamma(2-cgmy.Params.Y) * (1/math.Pow(cgmy.Params.M, 2-cgmy.Params.Y) + 1/math.Pow(cgmy.Params.G, 2-cgmy.Params.Y)))
-	volAdjustment := volatility / currentVol
-	cgmy.Params.C *= math.Pow(volAdjustment, 2)
+	cgmy := *globalModels.CGMY
 
 	profitCount := 0
 	finalPrices := make([]float64, maxSimulations)
@@ -312,8 +306,15 @@ func simulateCGMY(spread models.OptionSpread, underlyingPrice, riskFreeRate, vol
 		}
 	}
 
+	probability := float64(profitCount) / float64(maxSimulations)
+
+	// Adjust probability for bear call spreads
+	if spread.SpreadType == "Bear Call" {
+		probability = 1 - probability
+	}
+
 	return map[string]float64{
-		"probability": float64(profitCount) / float64(maxSimulations),
+		"probability": probability,
 	}, finalPrices
 }
 

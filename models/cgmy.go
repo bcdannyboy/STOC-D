@@ -52,21 +52,21 @@ func mathPhi(x float64) float64 {
 	return 0.5 * (1 + math.Erf(x/math.Sqrt2))
 }
 
-func (p *CGMYProcess) Calibrate(marketPrices []float64, strikes []float64, s0, r, t float64, isCall bool) {
+func (cgmy *CGMYProcess) Calibrate(marketPrices []float64, strikes []float64, s0, r, t float64, isCall bool) {
 	objectiveFunc := func(params []float64) float64 {
-		tempProcess := NewCGMYProcess(math.Abs(params[0]), math.Abs(params[1]), math.Abs(params[2]), math.Abs(params[3]))
+		tempCGMY := NewCGMYProcess(math.Abs(params[0]), math.Abs(params[1]), math.Abs(params[2]), math.Abs(params[3]))
 		var mse float64
 		for i, strike := range strikes {
-			modelPrice := tempProcess.FastOptionPrice(s0, strike, r, t, isCall)
+			modelPrice := tempCGMY.OptionPrice(s0, strike, r, t, isCall, 1000)
 			mse += math.Pow(modelPrice-marketPrices[i], 2)
 		}
 		return mse / float64(len(strikes))
 	}
 
-	initialGuess := []float64{0.5, 5.0, 5.0, 0.5}
+	initialGuess := []float64{cgmy.Params.C, cgmy.Params.G, cgmy.Params.M, cgmy.Params.Y}
 	result := NelderMead(objectiveFunc, initialGuess, 1e-6, 1000)
 
-	p.Params = CGMYParams{C: math.Abs(result[0]), G: math.Abs(result[1]), M: math.Abs(result[2]), Y: math.Abs(result[3])}
+	cgmy.Params = CGMYParams{C: math.Abs(result[0]), G: math.Abs(result[1]), M: math.Abs(result[2]), Y: math.Abs(result[3])}
 }
 
 func (p *CGMYProcess) FastOptionPrice(s0, strike, r, t float64, isCall bool) float64 {
@@ -112,6 +112,9 @@ func (p *CGMYProcess) CalculateVolatility() float64 {
 }
 
 func integrate(f func(float64) float64, a, b float64, n int) float64 {
+	if n <= 0 {
+		return 0 // Return 0 if n is non-positive
+	}
 	h := (b - a) / float64(n)
 	sum := 0.5 * (f(a) + f(b))
 	for i := 1; i < n; i++ {
@@ -347,41 +350,39 @@ func (p *CGMYProcess) SimulatePathsBatch(t, dt float64, numPaths int) [][]float6
 }
 
 func (p *CGMYProcess) OptionPrice(s0, strike, r, t float64, isCall bool, numSimulations int) float64 {
-	paths := p.SimulatePathsBatch(t, t/252, numSimulations)
-
-	var sumPayoff float64
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	batchSize := numSimulations / runtime.NumCPU()
-	if batchSize == 0 {
-		batchSize = 1
+	cf := func(u complex128) complex128 {
+		return p.CharacteristicFunction(imag(u))
 	}
 
-	for i := 0; i < numSimulations; i += batchSize {
-		wg.Add(1)
-		go func(start, end int) {
-			defer wg.Done()
-			localSum := 0.0
-
-			for j := start; j < end && j < numSimulations; j++ {
-				sT := s0 * math.Exp(paths[j][len(paths[j])-1]-(r+p.Params.C*math.Gamma(1-p.Params.Y)*(math.Pow(p.Params.M, p.Params.Y-1)-math.Pow(p.Params.G, p.Params.Y-1)))*t)
-				var payoff float64
-				if isCall {
-					payoff = math.Max(sT-strike, 0)
-				} else {
-					payoff = math.Max(strike-sT, 0)
-				}
-				localSum += payoff
-			}
-
-			mu.Lock()
-			sumPayoff += localSum
-			mu.Unlock()
-		}(i, i+batchSize)
+	integrand := func(u float64) float64 {
+		if u == 0 {
+			return 0 // Avoid division by zero
+		}
+		var result float64
+		if isCall {
+			result = real(cmplx.Exp(-complex(0, u*math.Log(strike/s0))) * cf(complex(0, u-1)) / (complex(0, u) * cf(complex(0, -1))))
+		} else {
+			result = real(cmplx.Exp(-complex(0, u*math.Log(strike/s0))) * cf(complex(0, u)) / (complex(0, u)))
+		}
+		if math.IsNaN(result) || math.IsInf(result, 0) {
+			return 0 // Return 0 for invalid results
+		}
+		return result
 	}
 
-	wg.Wait()
+	integral := integrate(integrand, 1e-8, 100, 1000) // Start from a small positive number instead of 0
+	price := s0 * math.Exp(-r*t) * (0.5 + integral/math.Pi)
 
-	return math.Exp(-r*t) * sumPayoff / float64(numSimulations)
+	if !isCall {
+		price = price - s0*math.Exp(-r*t) + strike*math.Exp(-r*t)
+	}
+
+	if math.IsNaN(price) || math.IsInf(price, 0) {
+		fmt.Printf("Invalid price calculated: %v\n", price)
+		fmt.Printf("Params: s0=%.6f, strike=%.6f, r=%.6f, t=%.6f, isCall=%v\n", s0, strike, r, t, isCall)
+		fmt.Printf("CGMY params: C=%.6f, G=%.6f, M=%.6f, Y=%.6f\n", p.Params.C, p.Params.G, p.Params.M, p.Params.Y)
+		return s0 // Return the current stock price as a fallback
+	}
+
+	return price
 }

@@ -108,10 +108,10 @@ type KouParams struct {
 
 func IsProfitable(spread OptionSpread, finalPrice float64) bool {
 	switch spread.SpreadType {
-	case "Bull Put":
-		return finalPrice > spread.ShortLeg.Option.Strike
 	case "Bear Call":
-		return finalPrice < spread.ShortLeg.Option.Strike
+		return finalPrice <= spread.ShortLeg.Option.Strike
+	case "Bull Put":
+		return finalPrice >= spread.ShortLeg.Option.Strike
 	default:
 		return false
 	}
