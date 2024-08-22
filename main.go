@@ -107,19 +107,36 @@ func main() {
 		var95 := math.Abs(allSpreads[i].VaR95)
 		es := math.Abs(allSpreads[i].ExpectedShortfall)
 		liquidity := allSpreads[i].Liquidity
+
+		minProb = math.Min(minProb, prob)
+		maxProb = math.Max(maxProb, prob)
+		minVaR = math.Min(minVaR, var95)
+		maxVaR = math.Max(maxVaR, var95)
+		minES = math.Min(minES, es)
+		maxES = math.Max(maxES, es)
+		minLiquidity = math.Min(minLiquidity, liquidity)
+		maxLiquidity = math.Max(maxLiquidity, liquidity)
+	}
+
+	normalizeValue := func(value, min, max float64) float64 {
+		if min == max {
+			return 0.5 // Return middle value if min and max are the same
+		}
+		return (value - min) / (max - min)
+	}
+
+	for i := range allSpreads {
+		prob := allSpreads[i].Probability.AverageProbability
+		var95 := math.Abs(allSpreads[i].VaR95)
+		es := math.Abs(allSpreads[i].ExpectedShortfall)
+		liquidity := allSpreads[i].Liquidity
 		vol := float64(allSpreads[i].Spread.ShortLeg.Option.Volume + allSpreads[i].Spread.LongLeg.Option.Volume)
 
-		// Normalize probability (higher is better)
-		normProb := (prob - minProb) / (maxProb - minProb)
-
-		// Normalize VaR (lower is better)
-		normVaR := 1 - ((var95 - minVaR) / (maxVaR - minVaR))
-
-		// Normalize ES (lower is better)
-		normES := 1 - ((es - minES) / (maxES - minES))
-
-		// Normalize liquidity (lower is better, as lower spread means higher liquidity)
-		normLiquidity := 1 - ((liquidity - minLiquidity) / (maxLiquidity - minLiquidity))
+		// Normalize values (avoid division by zero)
+		normProb := normalizeValue(prob, minProb, maxProb)
+		normVaR := 1 - normalizeValue(var95, minVaR, maxVaR)                       // Invert so lower is better
+		normES := 1 - normalizeValue(es, minES, maxES)                             // Invert so lower is better
+		normLiquidity := 1 - normalizeValue(liquidity, minLiquidity, maxLiquidity) // Invert so lower is better
 
 		// Calculate weighted score
 		weightedScore := (normLiquidity * weightLiquidity) +
@@ -127,7 +144,7 @@ func main() {
 			(normVaR * weightVaR) +
 			(normES * weightES)
 
-		allSpreads[i].CompositeScore = weightedScore * vol
+		allSpreads[i].CompositeScore = weightedScore * (1 + math.Log1p(vol)) // Use log to dampen the effect of volume
 	}
 
 	sort.Slice(allSpreads, func(i, j int) bool {

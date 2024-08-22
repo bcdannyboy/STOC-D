@@ -14,7 +14,7 @@ STOC'D (Stochastic Trade Optimization for Credit Derivatives) is an advanced opt
    - [Computational Complexity](#computational-complexity)
    - [Data Fetching](#data-fetching)
    - [Volatility Estimation](#volatility-estimation)
-   - [Stochastic Models](#stochastic-models)
+   - [Probabilistic Models](#probabilistic-models)
    - [Option Pricing](#option-pricing)
    - [Spread Identification](#spread-identification)
    - [Probability Calculation](#probability-calculation)
@@ -75,15 +75,20 @@ STOC'D employs various stochastic models and Monte Carlo simulations to estimate
 
 A rough estimate of the computational complexity can be described as:
 
-`O(numExpirations * (avgStrikesPerExpiration)^2 * numModels * numVolatilityEstimates * numSimulations * timeSteps)`
+`O(numExpirations * (avgStrikesPerExpiration)^2 * numProbabilisticModels * numVolatilityEstimates * numMaxSimulations * timeSteps)`
 
-currently, `numSimulations` is hardcoded at 1000 and `timeSteps` is hardcoded at 252 (number of trading days in a year).
+where `timeSteps` is typically 252 (number of trading days in a year) or higher for more granular simulations.
 
 As you can see, the complexity grows exponentially with the number of expirations and strikes, as well as the number of models and volatility estimates used. This can lead to significant computational overhead, especially when running multiple simulations or analyzing a large number of options.
 
 STOC'D Implements robust parallel algorithms to optimize performance and speed up computations, leveraging the power of modern multi-core processors to handle complex calculations efficiently. While this helps reduce the time required for simulations, it requires significant computational resources to run efficiently.
 
-With a 32 Core vCPU, all 25 volatility measures, only Kuo_Heston and CGMY_Heston simulation models enabled, and 1000 simulations per model, 100,000 spreads (i.e. SPY 5-45 DTE) takes approximately 4 hours to complete.
+To make STOC'D as resource efficient as possible, the following has been implemented:
+
+- **Parallel Processing**: Utilizes goroutines and channels to run simulations concurrently, improving performance by leveraging multiple CPU cores.
+- **Batch Processing**: Processes data in batches to optimize memory usage and reduce overhead, ensuring efficient handling of large datasets.
+- **Caching**: Stores intermediate results to avoid redundant calculations and speed up subsequent simulations, enhancing overall performance.
+- **Early Simulation Cut-Off**: Implements early stopping criteria to halt simulations that are unlikely to converge, have extremely low probabilities, or do not meet other required criteria (i.e. RoR) saving computational resources and time.
 
 ### Data Fetching
 
@@ -104,17 +109,13 @@ With a 32 Core vCPU, all 25 volatility measures, only Kuo_Heston and CGMY_Heston
 
 6. **Heston Stochastic Volatility**: Estimates volatility using the Heston model with mean-reverting stochastic volatility.
 
-### Stochastic Models
+### Probabilistic Models
 
-1. **Black-Scholes-Merton (BSM) Model**: Implements the classic option pricing model for European options.
+1. **Merton Jump Diffusion Model**: Incorporates jumps in the asset price process.
 
-2. **Heston Stochastic Volatility Model**: Simulates price paths with mean-reverting stochastic volatility.
+2. **Kou Jump Diffusion Model**: Uses a double exponential distribution for jump sizes.
 
-3. **Merton Jump Diffusion Model**: Incorporates jumps in the asset price process.
-
-4. **Kou Jump Diffusion Model**: Uses a double exponential distribution for jump sizes.
-
-5. **CGMY (Carr-Geman-Madan-Yor) Model**: Implements a tempered stable process allowing for infinite activity of small jumps and finite activity of large jumps.
+3. **CGMY (Carr-Geman-Madan-Yor) Model**: Implements a tempered stable process allowing for infinite activity of small jumps and finite activity of large jumps.
 
 ### Option Pricing
 
@@ -152,64 +153,64 @@ With a 32 Core vCPU, all 25 volatility measures, only Kuo_Heston and CGMY_Heston
 
 ### Integrate Advanced Volatility Modeling
 
-- [ ] **SABR Model Implementation**: Stochastic Alpha Beta Rho (SABR) model for volatility modeling, offering a more flexible framework for capturing the dynamics of implied volatility surfaces.
-- [ ] **Bates Model Implementation**: Integrate the Bates model, which combines stochastic volatility and jumps, to capture the complex dynamics of asset prices and improve option pricing accuracy.
+- **SABR Model Implementation**: Stochastic Alpha Beta Rho (SABR) model for volatility modeling, offering a more flexible framework for capturing the dynamics of implied volatility surfaces.
+- **Bates Model Implementation**: Integrate the Bates model, which combines stochastic volatility and jumps, to capture the complex dynamics of asset prices and improve option pricing accuracy.
 
 ### Expand One-Dimensional Stochastic Models
 
-- [ ] **Longstaff-Schwartz Method**: Implement the Longstaff-Schwartz method for American option pricing, allowing for more accurate pricing of options with early exercise features.
-- [ ] **Variance Gamma Model**: Implement the Variance Gamma model for more accurate pricing of options, particularly in markets with heavy tails or skewed distributions.
-- [ ] **Normal Inverse Gaussian (NIG) Model**: Integrate the NIG model to account for skewness and kurtosis in asset returns, offering a more nuanced approach to option pricing and risk management.
-- [ ] **Enhanced Model Calibrations**: Improve the calibration of existing models, ensuring that they accurately reflect market conditions and historical data, enhancing the reliability of simulations and pricing.
+- **Longstaff-Schwartz Method**: Implement the Longstaff-Schwartz method for American option pricing, allowing for more accurate pricing of options with early exercise features.
+- **Variance Gamma Model**: Implement the Variance Gamma model for more accurate pricing of options, particularly in markets with heavy tails or skewed distributions.
+- **Normal Inverse Gaussian (NIG) Model**: Integrate the NIG model to account for skewness and kurtosis in asset returns, offering a more nuanced approach to option pricing and risk management.
+- **Enhanced Model Calibrations**: Improve the calibration of existing models, ensuring that they accurately reflect market conditions and historical data, enhancing the reliability of simulations and pricing.
 
 ### Develop Multi-Dimensional Stochastic Modeling
 
-- [ ] **Lévy Copulas for Multi-Asset Correlation Modeling**: Implement Lévy copulas to model the dependency structures between multiple assets, allowing for more sophisticated multi-asset portfolio simulations and risk assessments.
+- **Lévy Copulas for Multi-Asset Correlation Modeling**: Implement Lévy copulas to model the dependency structures between multiple assets, allowing for more sophisticated multi-asset portfolio simulations and risk assessments.
 
-- [ ] **Extended Monte Carlo for Multiple Assets**:
-  - [ ] **Correlated Asset Price Simulations**: Develop algorithms for simulating correlated price paths across multiple assets, providing insights into the joint behavior of assets in a portfolio.
-  - [ ] **Multi-Asset Path Generation Algorithms**: Create advanced path generation techniques for scenarios involving multiple assets, enhancing the simulation of complex trading strategies.
+- **Extended Monte Carlo for Multiple Assets**:
+  - **Correlated Asset Price Simulations**: Develop algorithms for simulating correlated price paths across multiple assets, providing insights into the joint behavior of assets in a portfolio.
+  - **Multi-Asset Path Generation Algorithms**: Create advanced path generation techniques for scenarios involving multiple assets, enhancing the simulation of complex trading strategies.
 
-- [ ] **Multi-Asset Option Pricing Models**:
-  - [ ] **Basket Option Pricing**: Implement models to price basket options, where the payoff depends on the performance of a group of assets, expanding the tool's capabilities to handle more complex options strategies.
+- **Multi-Asset Option Pricing Models**:
+  - **Basket Option Pricing**: Implement models to price basket options, where the payoff depends on the performance of a group of assets, expanding the tool's capabilities to handle more complex options strategies.
 
 ### Improve Greeks Calculations
 
-- [ ] **Vomma and Vanna Calculations**: Add support for calculating higher-order Greeks like vomma (sensitivity of vega to volatility) and vanna (sensitivity of delta to volatility), providing deeper insights into options risk management.
+- **Vomma and Vanna Calculations**: Add support for calculating higher-order Greeks like vomma (sensitivity of vega to volatility) and vanna (sensitivity of delta to volatility), providing deeper insights into options risk management.
 
-- [ ] **Numerical Methods for Higher-Order Greeks**: Implement robust numerical techniques for accurately calculating higher-order Greeks, essential for sophisticated hedging and risk management strategies.
+- **Numerical Methods for Higher-Order Greeks**: Implement robust numerical techniques for accurately calculating higher-order Greeks, essential for sophisticated hedging and risk management strategies.
 
 ### Implement Advanced Hedging Strategies
 
-- [ ] **Options Greeks Hedging**:
-  - [ ] **Delta-Gamma Hedging Algorithms**: Develop algorithms to hedge both delta and gamma, ensuring that portfolios are protected against small and large movements in the underlying asset.
-  - [ ] **Vega Hedging Strategies**: Create strategies to hedge against volatility risk, ensuring that portfolios are less sensitive to changes in implied volatility.
+- **Options Greeks Hedging**:
+  - **Delta-Gamma Hedging Algorithms**: Develop algorithms to hedge both delta and gamma, ensuring that portfolios are protected against small and large movements in the underlying asset.
+  - **Vega Hedging Strategies**: Create strategies to hedge against volatility risk, ensuring that portfolios are less sensitive to changes in implied volatility.
 
-- [ ] **Mean-Variance Hedging**:
-  - [ ] **Quadratic Hedging Techniques**: Implement mean-variance hedging approaches to minimize the variance of portfolio returns, improving risk-adjusted performance.
-  - [ ] **Hedging Performance Metrics**: Develop metrics to evaluate the effectiveness of hedging strategies, providing traders with actionable insights into their hedging performance.
+- **Mean-Variance Hedging**:
+  - **Quadratic Hedging Techniques**: Implement mean-variance hedging approaches to minimize the variance of portfolio returns, improving risk-adjusted performance.
+  - **Hedging Performance Metrics**: Develop metrics to evaluate the effectiveness of hedging strategies, providing traders with actionable insights into their hedging performance.
 
-- [ ] **Dynamic Hedging Strategies**:
-  - [ ] **Adaptive Hedging Based on Market Conditions**: Implement dynamic hedging strategies that adjust based on real-time market conditions, improving the resilience and adaptability of trading strategies.
+- **Dynamic Hedging Strategies**:
+  - **Adaptive Hedging Based on Market Conditions**: Implement dynamic hedging strategies that adjust based on real-time market conditions, improving the resilience and adaptability of trading strategies.
 
 ### Improve Spread Identification and Analysis
 
-- [ ] **More Spread Strategies**:
-  - [ ] **Iron Condor Identification Algorithm**: Introduce algorithms to identify iron condor opportunities, expanding the range of spread strategies available to traders.
-  - [ ] **Butterfly Spread Analysis**: Develop tools to analyze butterfly spreads, providing detailed insights into their potential risks and rewards.
+- **More Spread Strategies**:
+  - **Iron Condor Identification Algorithm**: Introduce algorithms to identify iron condor opportunities, expanding the range of spread strategies available to traders.
+  - **Butterfly Spread Analysis**: Develop tools to analyze butterfly spreads, providing detailed insights into their potential risks and rewards.
 
-- [ ] **Enhanced Spread Scoring System**:
-  - [ ] **Dynamic Weighting Based on Market Conditions**: Refine the spread scoring system to dynamically adjust weightings based on current market conditions, ensuring that the most relevant factors are emphasized in scoring.
+- **Enhanced Spread Scoring System**:
+  - **Dynamic Weighting Based on Market Conditions**: Refine the spread scoring system to dynamically adjust weightings based on current market conditions, ensuring that the most relevant factors are emphasized in scoring.
 
 ### Develop Comprehensive Portfolio Management
 
-- [ ] **Position Management**:
-  - [ ] **Add/Close Position Functions with P&L Tracking**: Implement functionalities for managing open positions, including tools to track profit and loss (P&L) in real-time.
-  - [ ] **Position Sizing Algorithms**: Develop algorithms for optimal position sizing, helping traders manage risk and maximize returns.
+- **Position Management**:
+  - **Add/Close Position Functions with P&L Tracking**: Implement functionalities for managing open positions, including tools to track profit and loss (P&L) in real-time.
+  - **Position Sizing Algorithms**: Develop algorithms for optimal position sizing, helping traders manage risk and maximize returns.
 
-- [ ] **Historical Tracking and Analysis**:
-  - [ ] **Time Series Analysis of Portfolio Performance**: Implement tools for analyzing portfolio performance over time, using time series analysis to identify trends and make data-driven adjustments.
+- **Historical Tracking and Analysis**:
+  - **Time Series Analysis of Portfolio Performance**: Implement tools for analyzing portfolio performance over time, using time series analysis to identify trends and make data-driven adjustments.
 
-- [ ] **Portfolio-Level Tools**:
-  - [ ] **Portfolio VaR and ES Calculations**: Extend VaR and ES calculations to the portfolio level, providing a holistic view of risk across all positions.
-  - [ ] **Portfolio Optimization Algorithms**: Develop algorithms to optimize portfolios based on multiple criteria, including risk, return, and capital allocation.
+- **Portfolio-Level Tools**:
+  - **Portfolio VaR and ES Calculations**: Extend VaR and ES calculations to the portfolio level, providing a holistic view of risk across all positions.
+  - **Portfolio Optimization Algorithms**: Develop algorithms to optimize portfolios based on multiple criteria, including risk, return, and capital allocation.
