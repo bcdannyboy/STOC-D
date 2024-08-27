@@ -1,4 +1,4 @@
-package stocdslock
+package stocdslack
 
 import (
 	"log"

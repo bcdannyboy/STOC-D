@@ -22,7 +22,7 @@ const (
 var globalModels probability.GlobalModels
 var modelsCalibrated bool
 
-func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string) []models.SpreadWithProbabilities {
+func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string, progressChan chan<- int) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("IdentifySpreads started at %v", startTime)
 
@@ -57,7 +57,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Total spreads to process: %d\n", totalJobs)
 
 	log.Printf("Starting processChainOptimized at %v", time.Now())
-	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history, avgVol)
+	spreads := processChainOptimized(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, minReturnOnRisk, currentDate, spreadType, totalJobs, history, avgVol, progressChan)
 	log.Printf("Finished processChainOptimized at %v", time.Now())
 
 	log.Printf("Sorting %d spreads by highest probability", len(spreads))
@@ -109,6 +109,56 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	}
 
 	log.Printf("IdentifySpreads finished at %v. Total time: %v", time.Now(), time.Since(startTime))
+	return spreads
+}
+
+func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory, avgVol float64, progressChan chan<- int) []models.SpreadWithProbabilities {
+	startTime := time.Now()
+	log.Printf("processChainOptimized started at %v", startTime)
+
+	jobChan := make(chan job, workerPoolSize)
+	resultChan := make(chan models.SpreadWithProbabilities, workerPoolSize)
+
+	var wg sync.WaitGroup
+	for i := 0; i < workerPoolSize; i++ {
+		wg.Add(1)
+		go worker(jobChan, resultChan, &wg, minReturnOnRisk, history, chain, avgVol)
+	}
+
+	go func() {
+		generateJobs(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, currentDate, spreadType, jobChan)
+		close(jobChan)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	var spreads []models.SpreadWithProbabilities
+	var processed int
+	for spread := range resultChan {
+		// Skip spreads with zero volume in either leg
+		if spread.Spread.ShortLeg.Option.Volume == 0 || spread.Spread.LongLeg.Option.Volume == 0 {
+			processed++
+			if processed >= totalJobs {
+				break
+			}
+			continue
+		}
+
+		if isSpreadViable(spread, minReturnOnRisk) && spread.MeetsRoR {
+			spreads = append(spreads, spread)
+		}
+		processed++
+		if processed >= totalJobs {
+			break
+		}
+		progress := int((float64(processed) / float64(totalJobs)) * 100)
+		progressChan <- progress
+	}
+
+	log.Printf("processChainOptimized finished at %v. Total time: %v", time.Now(), time.Since(startTime))
 	return spreads
 }
 
@@ -175,55 +225,6 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 
 	modelsCalibrated = true
 	fmt.Printf("Models calibrated\n")
-}
-
-func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, minReturnOnRisk float64, currentDate time.Time, spreadType string, totalJobs int, history tradier.QuoteHistory, avgVol float64) []models.SpreadWithProbabilities {
-	startTime := time.Now()
-	log.Printf("processChainOptimized started at %v", startTime)
-
-	jobChan := make(chan job, workerPoolSize)
-	resultChan := make(chan models.SpreadWithProbabilities, workerPoolSize)
-
-	var wg sync.WaitGroup
-	for i := 0; i < workerPoolSize; i++ {
-		wg.Add(1)
-		go worker(jobChan, resultChan, &wg, minReturnOnRisk, history, chain, avgVol)
-	}
-
-	go func() {
-		generateJobs(chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, localVolSurface, currentDate, spreadType, jobChan)
-		close(jobChan)
-	}()
-
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	var spreads []models.SpreadWithProbabilities
-	var processed int
-	for spread := range resultChan {
-		// Skip spreads with zero volume in either leg
-		if spread.Spread.ShortLeg.Option.Volume == 0 || spread.Spread.LongLeg.Option.Volume == 0 {
-			processed++
-			if processed >= totalJobs {
-				break
-			}
-			continue
-		}
-
-		if isSpreadViable(spread, minReturnOnRisk) && spread.MeetsRoR {
-			spreads = append(spreads, spread)
-		}
-		processed++
-		if processed >= totalJobs {
-			break
-		}
-		fmt.Printf("%d/%d spreads processed (%.2f%%)\n", processed, totalJobs, (float64(processed)/float64(totalJobs))*100)
-	}
-
-	log.Printf("processChainOptimized finished at %v. Total time: %v", time.Now(), time.Since(startTime))
-	return spreads
 }
 
 func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, currentDate time.Time, spreadType string, jobQueue chan<- job) {
@@ -375,12 +376,12 @@ func determineSpreadType(shortOpt, longOpt tradier.Option) string {
 	return "Unknown"
 }
 
-func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put")
+func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put", progressChan)
 }
 
-func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call")
+func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call", progressChan)
 }
 
 func filterOptions(options []tradier.Option, spreadType string) []tradier.Option {

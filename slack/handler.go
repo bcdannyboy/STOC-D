@@ -1,4 +1,4 @@
-package stocdslock
+package stocdslack
 
 import (
 	"github.com/slack-go/slack"
