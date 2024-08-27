@@ -1,12 +1,14 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/bcdannyboy/stocd/positions"
 	"github.com/bcdannyboy/stocd/tradier"
 	"github.com/joho/godotenv"
+	"github.com/sendgrid/sendgrid-go"
+	"github.com/sendgrid/sendgrid-go/helpers/mail"
 	"github.com/xhhuango/json"
 )
 
@@ -25,15 +29,10 @@ const (
 )
 
 func STOCD(indicators map[string]float64, minDTE, maxDTE, rfr, minRoR float64) string {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
 	tradier_key := os.Getenv("TRADIER_KEY")
 
 	symbols := make([]string, len(indicators))
-	for symbol, _ := range indicators {
+	for symbol := range indicators {
 		symbols = append(symbols, symbol)
 	}
 
@@ -55,7 +54,7 @@ func STOCD(indicators map[string]float64, minDTE, maxDTE, rfr, minRoR float64) s
 				return
 			}
 
-			optionsChains, err := tradier.GET_OPTIONS_CHAIN(symbol, tradier_key, minDTE, maxDTE)
+			optionsChains, err := tradier.GET_OPTIONS_CHAIN(symbol, tradier_key, int(minDTE), int(maxDTE))
 			if err != nil {
 				fmt.Printf("Error fetching options chain for %s: %s\n", symbol, err.Error())
 				return
@@ -181,31 +180,48 @@ func STOCD(indicators map[string]float64, minDTE, maxDTE, rfr, minRoR float64) s
 		Liquidity := spread.Liquidity
 		Var95 := spread.VaR95 * 100 // Convert to percentage
 
-		spreadStr := fmt.Sprintf("Spread #%d (%.2f)\n", i+1, CompositeScore)
-		spreadStr += fmt.Sprintf("Average Probability: %.2f%%\n", averageProbability)
-		spreadStr += fmt.Sprintf("Bid-Ask Spread: %.2f\n", Liquidity)
-		spreadStr += fmt.Sprintf("Volume: %d\n", Vol)
-		spreadStr += fmt.Sprintf("Expected Shortfall (ES): %.2f%%\n", ExpectedShortfall)
-		spreadStr += fmt.Sprintf("Value at Risk (VaR 95): %.2f%%\n", Var95)
-		spreadStr += fmt.Sprintf("Long Leg: %s\n", LongLeg)
-		spreadStr += fmt.Sprintf("Short Leg: %s\n", ShortLeg)
-		spreadStr += fmt.Sprintf("Return on Risk (RoR): %.2f%%\n", RoR)
-		spreadStr += fmt.Sprintf("Average Price: %.2f\n", AveragePrice)
-		spreadStr += fmt.Sprintf("BSM Price: %.2f\n", BSMPrice)
-		spreadStr += fmt.Sprintf("Market Price: %.2f\n", MarketPrice)
+		spreadStr := fmt.Sprintf(`
+			<tr>
+				<td>%d</td>
+				<td>%.2f</td>
+				<td>%.2f%%</td>
+				<td>%.2f</td>
+				<td>%d</td>
+				<td>%.2f%%</td>
+				<td>%.2f%%</td>
+				<td>%s</td>
+				<td>%s</td>
+				<td>%.2f%%</td>
+				<td>%.2f</td>
+				<td>%.2f</td>
+				<td>%.2f</td>
+			</tr>`,
+			i+1, CompositeScore, averageProbability, Liquidity, Vol, ExpectedShortfall,
+			Var95, LongLeg, ShortLeg, RoR, AveragePrice, BSMPrice, MarketPrice)
 
 		spreadStrings[i] = spreadStr
 	}
 
-	finalStr := fmt.Sprintf("Top %d spreads\n", len(allSpreads))
-	finalStr += "--------------------\n"
-
-	for i, spreadStr := range spreadStrings {
-		finalStr += spreadStr + "\n"
-		if i < len(spreadStrings)-1 {
-			finalStr += "--------------------\n"
-		}
-	}
+	finalStr := fmt.Sprintf(`
+		<h2>Top %d spreads</h2>
+		<table border="1" cellpadding="5" cellspacing="0">
+			<tr>
+				<th>#</th>
+				<th>Composite Score</th>
+				<th>Average Probability</th>
+				<th>Bid-Ask Spread</th>
+				<th>Volume</th>
+				<th>Expected Shortfall (ES)</th>
+				<th>Value at Risk (VaR 95)</th>
+				<th>Long Leg</th>
+				<th>Short Leg</th>
+				<th>Return on Risk (RoR)</th>
+				<th>Average Price</th>
+				<th>BSM Price</th>
+				<th>Market Price</th>
+			</tr>
+			%s
+		</table>`, len(allSpreads), strings.Join(spreadStrings, ""))
 
 	fancyspreads := "fancyspreads.txt"
 	err = ioutil.WriteFile(fancyspreads, []byte(finalStr), 0644)
@@ -219,6 +235,52 @@ func STOCD(indicators map[string]float64, minDTE, maxDTE, rfr, minRoR float64) s
 	return finalStr
 }
 
-func main() {
+func sendEmail(subject, plainTextContent, htmlContent string) error {
+	fromEmail := mail.NewEmail("STOC'D", "daniel@bcdefense.com")
+	toEmail := mail.NewEmail("Daniel Bloom", "daniel@bcdefense.com") // Replace with the actual user's email
 
+	message := mail.NewSingleEmail(fromEmail, subject, toEmail, plainTextContent, htmlContent)
+	client := sendgrid.NewSendClient(os.Getenv("SENDGRID_API_KEY"))
+	response, err := client.Send(message)
+	if err != nil {
+		return fmt.Errorf("error sending email: %v", err)
+	}
+
+	fmt.Printf("Email sent successfully! Status Code: %d\n", response.StatusCode)
+	return nil
+}
+
+func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// Define flags
+	symbol := flag.String("symbol", "", "Symbol to analyze")
+	minDTE := flag.Float64("minDTE", 0, "Minimum DTE")
+	maxDTE := flag.Float64("maxDTE", 0, "Maximum DTE")
+	rfr := flag.Float64("rfr", 0, "Risk-free rate")
+	indicator := flag.Float64("indicator", 0, "Indicator value (positive for Bull Put, negative for Bear Call)")
+	minRoR := flag.Float64("minRoR", 0.175, "Minimum Return on Risk (RoR)")
+
+	flag.Parse()
+
+	if *symbol == "" {
+		log.Fatal("Error: symbol is required")
+	}
+
+	indicators := map[string]float64{*symbol: *indicator}
+
+	// Call STOCD with the parsed parameters
+	result := STOCD(indicators, *minDTE, *maxDTE, *rfr, *minRoR)
+	fmt.Printf("STOCD result for %s: %s\n", *symbol, result)
+
+	finalOut := fmt.Sprintf("Symbol: %s\nMinDTE: %.2f\nMaxDTE: %.2f\nRisk Free Rate: %.4f\nIndicator: %.2f\n\n%s", *symbol, *minDTE, *maxDTE, *rfr, *indicator, result)
+
+	// Send the result via email
+	err = sendEmail("STOC'D Results", finalOut, finalOut)
+	if err != nil {
+		log.Fatal("Error sending email:", err)
+	}
 }
