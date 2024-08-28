@@ -13,6 +13,7 @@ import (
 	"github.com/bcdannyboy/stocd/models"
 	"github.com/bcdannyboy/stocd/probability"
 	"github.com/bcdannyboy/stocd/tradier"
+	"github.com/slack-go/slack"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 var globalModels probability.GlobalModels
 var modelsCalibrated bool
 
-func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string, progressChan chan<- int) []models.SpreadWithProbabilities {
+func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("IdentifySpreads started at %v", startTime)
 
@@ -47,7 +48,7 @@ func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, ris
 	fmt.Printf("Average Implied Volatility: %.4f\n", avgIV)
 	fmt.Printf("Average Volatility: %.4f\n", avgVol)
 
-	calibrateGlobalModels(history, chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, spreadType)
+	calibrateGlobalModels(history, chain, underlyingPrice, riskFreeRate, yzVolatilities, rsVolatilities, spreadType, slackClient, channelID, calibrationChan)
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
@@ -162,31 +163,40 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 	return spreads
 }
 
-func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, spreadType string) {
+func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, spreadType string, slackClient *slack.Client, channelID string, calibrationChan chan<- string) {
 	if modelsCalibrated {
 		return // Models already calibrated
 	}
 
+	sendCalibrationMessage := func(message string) {
+		calibrationChan <- message
+	}
+
+	sendCalibrationMessage("Starting model calibration...")
+	sendCalibrationMessage(fmt.Sprintf("Risk-Free Rate: %.4f", riskFreeRate))
+
 	fmt.Printf("Calibrating models...\n")
 	fmt.Printf("Risk-Free Rate: %.4f\n", riskFreeRate)
 	fmt.Printf("Extracting historical prices and strikes...\n")
+	sendCalibrationMessage("Extracting historical prices and strikes...")
 	marketPrices := extractHistoricalPrices(history)
 	fmt.Printf("Extracting all strikes...\n")
+	sendCalibrationMessage("Extracting all strikes...")
 	strikes := extractAllStrikes(chain)
 	s0 := marketPrices[len(marketPrices)-1]
 	t := 1.0 // Use 1 year as a default time to maturity
 
 	// Calculate average volatilities
 	avgYZ := calculateAverageVolatility(yangzhangVolatilities)
-	fmt.Printf("Average Yang-Zhang Volatility: %.4f\n", avgYZ)
 	avgRS := calculateAverageVolatility(rogerssatchelVolatilities)
-	fmt.Printf("Average Rogers-Satchell Volatility: %.4f\n", avgRS)
 	avgIV := calculateAverageImpliedVolatility(chain)
-	fmt.Printf("Average Implied Volatility: %.4f\n", avgIV)
 	avgVol := (avgYZ + avgRS + avgIV) / 3
-	fmt.Printf("Average Volatility: %.4f\n", avgVol)
+
+	volatilityMsg := fmt.Sprintf("Average Volatilities:\nYang-Zhang: %.4f\nRogers-Satchell: %.4f\nImplied: %.4f\nOverall: %.4f", avgYZ, avgRS, avgIV, avgVol)
+	sendCalibrationMessage(volatilityMsg)
 
 	// Calibrate Merton model
+	sendCalibrationMessage("Calibrating Merton model...")
 	fmt.Printf("Calculating historical jumps...\n")
 	historicalJumps := calculateHistoricalJumps(history)
 	mertonModel := models.NewMertonJumpDiffusion(riskFreeRate, avgVol, 1.0, 0, avgVol)
@@ -195,11 +205,13 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	globalModels.Merton = mertonModel
 
 	// Calibrate Kou model
+	sendCalibrationMessage("Calibrating Kou model...")
 	fmt.Printf("Calibrating Kou model...\n")
 	kouModel := models.NewKouJumpDiffusion(riskFreeRate, avgVol, marketPrices, 1.0/252.0)
 	globalModels.Kou = kouModel
 
 	// Calibrate CGMY model
+	sendCalibrationMessage("Calibrating CGMY model...")
 	fmt.Printf("Calibrating CGMY model...\n")
 	cgmyProcess := models.NewCGMYProcess(0.1, 5.0, 10.0, 0.5) // Initial guess
 	cgmyt := 1.0                                              // Use 1 year as a default time to maturity
@@ -207,24 +219,28 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 
 	if strings.Contains(strings.ToLower(spreadType), "put") {
 		fmt.Printf("Using put options for CGMY calibration\n")
-		isCall = false
+		sendCalibrationMessage("Using put options for CGMY calibration")
 	}
 
 	cgmyProcess.Calibrate(marketPrices, strikes, underlyingPrice, riskFreeRate, cgmyt, isCall)
 	globalModels.CGMY = cgmyProcess
 
 	// Calibrate Heston model
+	sendCalibrationMessage("Calibrating Heston model...")
 	fmt.Printf("Calibrating Heston model...\n")
 	hestonModel := models.NewHestonModel(avgVol*avgVol, 2, avgVol*avgVol, 0.4, -0.5)
 	err := hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
 	if err != nil {
-		fmt.Printf("Error calibrating Heston model: %v\n", err)
+		errMsg := fmt.Sprintf("Error calibrating Heston model: %v", err)
+		fmt.Println(errMsg)
+		sendCalibrationMessage(errMsg)
 		// TODO: Handle calibration error
 	}
 	globalModels.Heston = hestonModel
 
 	modelsCalibrated = true
 	fmt.Printf("Models calibrated\n")
+	sendCalibrationMessage("All models calibrated successfully")
 }
 
 func generateJobs(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yzVolatilities, rsVolatilities map[string]float64, localVolSurface models.VolatilitySurface, currentDate time.Time, spreadType string, jobQueue chan<- job) {
@@ -376,12 +392,12 @@ func determineSpreadType(shortOpt, longOpt tradier.Option) string {
 	return "Unknown"
 }
 
-func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put", progressChan)
+func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put", progressChan, slackClient, channelID, calibrationChan)
 }
 
-func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call", progressChan)
+func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call", progressChan, slackClient, channelID, calibrationChan)
 }
 
 func filterOptions(options []tradier.Option, spreadType string) []tradier.Option {

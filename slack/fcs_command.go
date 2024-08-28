@@ -82,21 +82,26 @@ func runSTOCDWithProgress(client *socketmode.Client, channelID, timestamp string
 
 	progressChan := make(chan int)
 	resultChan := make(chan []models.SpreadWithProbabilities)
+	calibrationChan := make(chan string)
 
 	go func() {
 		var spreads []models.SpreadWithProbabilities
 		if indicator > 0 {
 			client.PostMessage(channelID, slack.MsgOptionText("Identifying Bull Put Spreads...", false), slack.MsgOptionTS(timestamp))
-			spreads = positions.IdentifyBullPutSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan)
+			spreads = positions.IdentifyBullPutSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan)
 		} else {
 			client.PostMessage(channelID, slack.MsgOptionText("Identifying Bear Call Spreads...", false), slack.MsgOptionTS(timestamp))
-			spreads = positions.IdentifyBearCallSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan)
+			spreads = positions.IdentifyBearCallSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan)
 		}
 		resultChan <- spreads
 	}()
 
 	for {
 		select {
+		case calibrationMsg := <-calibrationChan:
+			client.PostMessage(channelID,
+				slack.MsgOptionText(calibrationMsg, false),
+				slack.MsgOptionTS(timestamp))
 		case progress := <-progressChan:
 			if progress%10 == 0 { // Update every 10%
 				client.PostMessage(channelID,
@@ -118,10 +123,10 @@ func runSTOCDWithProgress(client *socketmode.Client, channelID, timestamp string
 
 			for i, spread := range spreads[:min(10, len(spreads))] {
 				resultMsg.WriteString(fmt.Sprintf("Spread %d:\n", i+1))
-				resultMsg.WriteString(fmt.Sprintf("  Composite Score: %.2f\n", spread.CompositeScore))
 				resultMsg.WriteString(fmt.Sprintf("  Short Leg: %s, Long Leg: %s\n", spread.Spread.ShortLeg.Option.Symbol, spread.Spread.LongLeg.Option.Symbol))
-				resultMsg.WriteString(fmt.Sprintf("  Probability of Profit: %.2f%%\n", spread.Probability.AverageProbability*100))
 				resultMsg.WriteString(fmt.Sprintf("  Spread Credit: %.2f, ROR: %.2f%%\n", spread.Spread.SpreadCredit, spread.Spread.ROR*100))
+				resultMsg.WriteString(fmt.Sprintf("  Probability of Profit: %.2f%%\n", spread.Probability.AverageProbability*100))
+				resultMsg.WriteString(fmt.Sprintf("  Composite Score: %.2f\n", spread.CompositeScore))
 				resultMsg.WriteString(fmt.Sprintf("  Expected Shortfall: %.2f%%\n", spread.ExpectedShortfall*100))
 				resultMsg.WriteString(fmt.Sprintf("  VaR (95%%): %.2f%%\n", spread.VaR95*100))
 				resultMsg.WriteString(fmt.Sprintf("  Liquidity: %.2f\n", spread.Liquidity))
