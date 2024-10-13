@@ -21,9 +21,8 @@ const (
 )
 
 var globalModels probability.GlobalModels
-var modelsCalibrated bool
 
-func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string, globalModels probability.GlobalModels) []models.SpreadWithProbabilities {
+func IdentifySpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, spreadType string, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
 	startTime := time.Now()
 	log.Printf("IdentifySpreads started at %v", startTime)
 
@@ -164,9 +163,6 @@ func processChainOptimized(chain map[string]*tradier.OptionChain, underlyingPric
 }
 
 func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, yangzhangVolatilities, rogerssatchelVolatilities map[string]float64, spreadType string, slackClient *slack.Client, channelID string, calibrationChan chan<- string) {
-	if modelsCalibrated {
-		return // Models already calibrated
-	}
 
 	sendCalibrationMessage := func(message string) {
 		calibrationChan <- message
@@ -238,7 +234,6 @@ func calibrateGlobalModels(history tradier.QuoteHistory, chain map[string]*tradi
 	}
 	globalModels.Heston = hestonModel
 
-	modelsCalibrated = true
 	fmt.Printf("Models calibrated\n")
 	sendCalibrationMessage("All models calibrated successfully")
 }
@@ -392,12 +387,12 @@ func determineSpreadType(shortOpt, longOpt tradier.Option) string {
 	return "Unknown"
 }
 
-func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string, globalModels probability.GlobalModels) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put", progressChan, slackClient, channelID, calibrationChan, globalModels)
+func IdentifyBullPutSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bull Put", progressChan, slackClient, channelID, calibrationChan)
 }
 
-func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string, globalModels probability.GlobalModels) []models.SpreadWithProbabilities {
-	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call", progressChan, slackClient, channelID, calibrationChan, globalModels)
+func IdentifyBearCallSpreads(chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, history tradier.QuoteHistory, minReturnOnRisk float64, currentDate time.Time, progressChan chan<- int, slackClient *slack.Client, channelID string, calibrationChan chan<- string) []models.SpreadWithProbabilities {
+	return IdentifySpreads(chain, underlyingPrice, riskFreeRate, history, minReturnOnRisk, currentDate, "Bear Call", progressChan, slackClient, channelID, calibrationChan)
 }
 
 func filterOptions(options []tradier.Option, spreadType string) []tradier.Option {

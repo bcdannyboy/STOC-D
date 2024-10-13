@@ -12,7 +12,6 @@ import (
 
 	"github.com/bcdannyboy/stocd/models"
 	"github.com/bcdannyboy/stocd/positions"
-	"github.com/bcdannyboy/stocd/probability"
 	"github.com/bcdannyboy/stocd/tradier"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
@@ -86,22 +85,7 @@ func runSTOCDWithProgress(client *socketmode.Client, channelID, timestamp string
 
 	lastPrice := quotes.History.Day[len(quotes.History.Day)-1].Close
 
-	// Calibrate models for the current stock before any analysis is done
-	client.PostMessage(channelID, slack.MsgOptionText("Calibrating models...", false), slack.MsgOptionTS(timestamp))
 	calibrationChan := make(chan string, 100000)
-
-	// Check if the symbol is already calibrated
-	globalModelsInterface, exists := calibrationCache.Load(symbol)
-	var globalModels probability.GlobalModels
-
-	if exists {
-		client.PostMessage(channelID, slack.MsgOptionText("Using cached calibration for symbol "+symbol, false), slack.MsgOptionTS(timestamp))
-		globalModels = globalModelsInterface.(probability.GlobalModels)
-	} else {
-		globalModels = calibrateGlobalModels(quotes, optionsChain, lastPrice, rfr, client, channelID, timestamp, calibrationChan)
-		calibrationCache.Store(symbol, globalModels) // Store the calibrated models in the cache
-	}
-
 	go func() {
 		// Handle calibration messages
 		for msg := range calibrationChan {
@@ -118,21 +102,67 @@ func runSTOCDWithProgress(client *socketmode.Client, channelID, timestamp string
 		var spreads []models.SpreadWithProbabilities
 		if indicator > 0 {
 			client.PostMessage(channelID, slack.MsgOptionText("Identifying Bull Put Spreads...", false), slack.MsgOptionTS(timestamp))
-			spreads = positions.IdentifyBullPutSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan, globalModels)
+			spreads = positions.IdentifyBullPutSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan)
 		} else {
 			client.PostMessage(channelID, slack.MsgOptionText("Identifying Bear Call Spreads...", false), slack.MsgOptionTS(timestamp))
-			spreads = positions.IdentifyBearCallSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan, globalModels)
+			spreads = positions.IdentifyBearCallSpreads(optionsChain, lastPrice, rfr, *quotes, minRoR, time.Now(), progressChan, &client.Client, channelID, calibrationChan)
 		}
 		resultChan <- spreads
 	}()
 
+	said10 := false
+	said25 := false
+	said33 := false
+	said50 := false
+	said66 := false
+	said75 := false
+	said90 := false
+	said95 := false
+
 	for {
 		select {
 		case progress := <-progressChan:
-			if progress%10 == 0 { // Update every 10%
+			fmt.Printf("Progress: %d\n", progress)
+			if progress >= 10 && !said10 {
 				client.PostMessage(channelID,
 					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
 					slack.MsgOptionTS(timestamp))
+				said10 = true
+			} else if progress >= 25 && !said25 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said25 = true
+			} else if progress >= 33 && !said33 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said33 = true
+			} else if progress >= 50 && !said50 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said50 = true
+			} else if progress >= 66 && !said66 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said66 = true
+			} else if progress >= 75 && !said75 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said75 = true
+			} else if progress >= 90 && !said90 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said90 = true
+			} else if progress >= 95 && !said95 {
+				client.PostMessage(channelID,
+					slack.MsgOptionText(fmt.Sprintf("Analysis %d%% complete...", progress), false),
+					slack.MsgOptionTS(timestamp))
+				said95 = true
 			}
 		case spreads := <-resultChan:
 			// Calculate composite scores
@@ -166,76 +196,6 @@ func runSTOCDWithProgress(client *socketmode.Client, channelID, timestamp string
 			return
 		}
 	}
-}
-
-func calibrateGlobalModels(quotes *tradier.QuoteHistory, chain map[string]*tradier.OptionChain, underlyingPrice, riskFreeRate float64, client *socketmode.Client, channelID, timestamp string, calibrationChan chan<- string) probability.GlobalModels {
-	var globalModels probability.GlobalModels
-
-	sendCalibrationMessage := func(message string) {
-		calibrationChan <- message
-		fmt.Println("Calibration message:", message) // Print to console for debugging
-		_, _, err := client.PostMessage(channelID, slack.MsgOptionText(message, false), slack.MsgOptionTS(timestamp))
-		if err != nil {
-			fmt.Printf("Error sending calibration message: %v\n", err)
-		}
-	}
-
-	sendCalibrationMessage("Starting model calibration...")
-	sendCalibrationMessage(fmt.Sprintf("Risk-Free Rate: %.4f", riskFreeRate))
-
-	marketPrices := extractHistoricalPrices(*quotes)
-	strikes := extractAllStrikes(chain)
-	s0 := marketPrices[len(marketPrices)-1]
-	t := 1.0 // Use 1 year as a default time to maturity
-
-	// Calculate average volatilities
-	yangZhangVols := models.CalculateYangZhangVolatility(*quotes)
-	rogersSatchellVols := models.CalculateRogersSatchellVolatility(*quotes)
-	avgYZ := calculateAverageVolatility(yangZhangVols)
-	avgRS := calculateAverageVolatility(rogersSatchellVols)
-	avgIV := calculateAverageImpliedVolatility(chain)
-	avgVol := (avgYZ + avgRS + avgIV) / 3
-
-	volatilityMsg := fmt.Sprintf("Average Volatilities:\nYang-Zhang: %.4f\nRogers-Satchell: %.4f\nImplied: %.4f\nOverall: %.4f", avgYZ, avgRS, avgIV, avgVol)
-	sendCalibrationMessage(volatilityMsg)
-
-	// Calibrate Merton model
-	sendCalibrationMessage("Calibrating Merton model...")
-	historicalJumps := calculateHistoricalJumps(*quotes)
-	mertonModel := models.NewMertonJumpDiffusion(riskFreeRate, avgVol, 1.0, 0, avgVol)
-	mertonModel.CalibrateJumpSizes(historicalJumps, 1)
-	globalModels.Merton = mertonModel
-	sendCalibrationMessage("Merton model calibrated.")
-
-	// Calibrate Kou model
-	sendCalibrationMessage("Calibrating Kou model...")
-	kouModel := models.NewKouJumpDiffusion(riskFreeRate, avgVol, marketPrices, 1.0/252.0)
-	globalModels.Kou = kouModel
-	sendCalibrationMessage("Kou model calibrated.")
-
-	// Calibrate CGMY model
-	sendCalibrationMessage("Calibrating CGMY model...")
-	cgmyProcess := models.NewCGMYProcess(0.1, 5.0, 10.0, 0.5) // Initial guess
-	cgmyt := 1.0                                              // Use 1 year as a default time to maturity
-	isCall := true                                            // Assume we're using call options for calibration
-	cgmyProcess.Calibrate(marketPrices, strikes, underlyingPrice, riskFreeRate, cgmyt, isCall)
-	globalModels.CGMY = cgmyProcess
-	sendCalibrationMessage("CGMY model calibrated.")
-
-	// Calibrate Heston model
-	sendCalibrationMessage("Calibrating Heston model...")
-	hestonModel := models.NewHestonModel(avgVol*avgVol, 2, avgVol*avgVol, 0.4, -0.5)
-	err := hestonModel.Calibrate(marketPrices, strikes, s0, riskFreeRate, t)
-	if err != nil {
-		errMsg := fmt.Sprintf("Error calibrating Heston model: %v", err)
-		sendCalibrationMessage(errMsg)
-	} else {
-		globalModels.Heston = hestonModel
-		sendCalibrationMessage("Heston model calibrated.")
-	}
-
-	sendCalibrationMessage("All models calibrated successfully")
-	return globalModels
 }
 
 func calculateCompositeScores(spreads []models.SpreadWithProbabilities) {
@@ -303,68 +263,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func calculateAverageVolatility(volatilities map[string]float64) float64 {
-	sum := 0.0
-	count := 0
-	for _, vol := range volatilities {
-		sum += vol
-		count++
-	}
-	if count == 0 {
-		return 0
-	}
-	return sum / float64(count)
-}
-
-func calculateAverageImpliedVolatility(chain map[string]*tradier.OptionChain) float64 {
-	sum := 0.0
-	count := 0
-	for _, expiration := range chain {
-		for _, option := range expiration.Options.Option {
-			if option.Greeks.MidIv > 0 {
-				sum += option.Greeks.MidIv
-				count++
-			}
-		}
-	}
-	if count == 0 {
-		return 0
-	}
-	return sum / float64(count)
-}
-
-func extractHistoricalPrices(quotes tradier.QuoteHistory) []float64 {
-	prices := make([]float64, len(quotes.History.Day))
-	for i, day := range quotes.History.Day {
-		prices[i] = day.Close
-	}
-	return prices
-}
-
-func extractAllStrikes(chain map[string]*tradier.OptionChain) []float64 {
-	strikeSet := make(map[float64]struct{})
-	for _, expiration := range chain {
-		for _, option := range expiration.Options.Option {
-			strikeSet[option.Strike] = struct{}{}
-		}
-	}
-	strikes := make([]float64, 0, len(strikeSet))
-	for strike := range strikeSet {
-		strikes = append(strikes, strike)
-	}
-	sort.Float64s(strikes)
-	return strikes
-}
-
-func calculateHistoricalJumps(quotes tradier.QuoteHistory) []float64 {
-	jumps := []float64{}
-	for i := 1; i < len(quotes.History.Day); i++ {
-		prevClose := quotes.History.Day[i-1].Close
-		currOpen := quotes.History.Day[i].Open
-		jump := math.Log(currOpen / prevClose)
-		jumps = append(jumps, jump)
-	}
-	return jumps
 }
