@@ -158,7 +158,9 @@ STOC'D is implemented as a Slack app, allowing users to interact with it directl
 - Formatted messages for displaying results and error information.
 - Handling of concurrent requests from multiple users.
 
-## Additional Commands
+## TODO Additional Commands
+
+currently the only implemented command is `/fcs`, the below is a list of commands I'd like to add over time
 
 - `/ee` - entry / exit, provide stochastic best entry and exit points for a given symbol.
 - `/pv` - predict volatility, provide a prediction of the volatility for a given symbol.
